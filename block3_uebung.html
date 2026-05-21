@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Block 3 Übungsplattform · finanzunterricht.ch</title>
+<meta name="description" content="Interaktive Übungen zu Block 3: Methoden ohne/mit laufender Inventur, Vorratbewertung nach LIFO und Durchschnitt, Verfahren der Lagerbewertung." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  .font-serif { font-family: 'Fraunces', Georgia, serif; }
+  input[type="text"]:focus { outline: none; }
+  @media print { .no-print { display: none !important; } }
+</style>
+</head>
+<body class="bg-stone-50">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+// ===== Icons =====
+const Icon = ({ d, className = "w-5 h-5" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{d}</svg>
+);
+const CheckIcon = (p) => <Icon {...p} d={<polyline points="20 6 9 17 4 12" />} />;
+const XIcon = (p) => <Icon {...p} d={<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>} />;
+const EyeIcon = (p) => <Icon {...p} d={<><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></>} />;
+const EyeOffIcon = (p) => <Icon {...p} d={<><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></>} />;
+const RotateCcwIcon = (p) => <Icon {...p} d={<><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></>} />;
+const BookOpenIcon = (p) => <Icon {...p} d={<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>} />;
+const AwardIcon = (p) => <Icon {...p} d={<><circle cx="12" cy="8" r="7" /><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" /></>} />;
+const InfoIcon = (p) => <Icon {...p} d={<><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></>} />;
+const ChevronLeftIcon = (p) => <Icon {...p} d={<polyline points="15 18 9 12 15 6" />} />;
+const ChevronRightIcon = (p) => <Icon {...p} d={<polyline points="9 18 15 12 9 6" />} />;
+
+// ===== Helpers =====
+const normalize = (s) => (s || "").toString().toLowerCase()
+  .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+const normalizeNumber = (s) => (s || "").toString().replace(/['\s.,]/g, "").replace(/CHF/gi, "").trim();
+
+const accountMatchers = {
+  forderungen: { contains: ["forderung", "debitor"], excludes: ["wertberichtigung", "delkredere", "verbindlichkeit", "kreditor", "verlust", "anzahlung"] },
+  verbindlichkeiten: { contains: ["verbindlichkeit", "kreditor"], excludes: ["forderung", "debitor"] },
+  bank: { contains: ["bank"], excludes: [] },
+  kasse: { contains: ["kass", "bargeld"], excludes: [] },
+  warenbestand: { contains: ["warenbestand", "warenlager", "warenvorrat", "warenvorraete"], excludes: ["aufwand", "ertrag"] },
+  warenaufwand: { contains: ["warenaufwand", "einstandspreis"], excludes: ["ertrag", "bestand", "material"] },
+  warenertrag: { contains: ["warenertrag", "betriebsertrag", "verkaufserloes", "warenverkauf"], excludes: ["aufwand", "minderung", "dienstleistung", "produktion"] },
+  // Dienstleistungsbetrieb
+  dienstleistungsertrag: { contains: ["dienstleistungsertrag", "honorarertrag", "beratungsertrag", "honorar"], excludes: ["aufwand"] },
+  personalaufwand: { contains: ["personalaufwand", "lohnaufwand", "gehaltsaufwand", "loehne", "gehaelter", "lohn"], excludes: ["ertrag", "neben", "produktion"] },
+  raumaufwand: { contains: ["raumaufwand", "mietaufwand", "raumkosten", "miete"], excludes: ["ertrag"] },
+  // Produktionsbetrieb
+  rohstoffe: { contains: ["rohstoff", "rohmaterial"], excludes: ["aufwand", "ertrag"] },
+  halbfabrikate: { contains: ["halbfabrikat", "halbfertige"], excludes: ["aufwand", "ertrag"] },
+  fertigfabrikate: { contains: ["fertigfabrikat", "fertigprodukt", "fertigware"], excludes: ["aufwand", "ertrag", "halb"] },
+  materialaufwand: { contains: ["materialaufwand"], excludes: ["ertrag", "bestand"] },
+  produktionsertrag: { contains: ["produktionsertrag", "produktionserloes", "fabrikationsertrag"], excludes: ["aufwand"] },
+  // Nicht fakturierte Dienstleistungen
+  nfdl: { contains: ["nfdl", "nichtfakturiertedienstleistung", "nichtfakturiertedl", "nichtfaktdl", "nichtfaktdienstleistung", "nichtfakturierteleistung"], excludes: ["aufwand", "bestand"] },
+  bestandsaenderung_nfdl: { contains: ["bestandsaenderungnfdl", "bestandesaenderungnfdl", "bestandsaendnfdl", "bestaendenfdl", "bestandsaenderungnichtfakt", "bestandesaenderungnichtfakt", "bestandnichtfakt"], excludes: ["aufwand"] },
+};
+
+const matchAccount = (input, key) => {
+  const n = normalize(input);
+  if (!n) return false;
+  const m = accountMatchers[key];
+  if (!m) return false;
+  if (!m.contains.some(c => n.includes(c))) return false;
+  return !m.excludes.some(e => n.includes(e));
+};
+
+const checkEntry = (entry, correctOptions) => {
+  if (!entry.soll || !entry.haben || !entry.betrag) return false;
+  return correctOptions.some((opt) => {
+    const sollMatch = opt.sollKeys.some((k) => matchAccount(entry.soll, k));
+    const habenMatch = opt.habenKeys.some((k) => matchAccount(entry.haben, k));
+    const betragMatch = normalizeNumber(entry.betrag) === normalizeNumber(opt.betrag.toString());
+    return sollMatch && habenMatch && betragMatch;
+  });
+};
+
+const diagnoseEntry = (entry, correctOptions) => {
+  if (!entry.soll && !entry.haben && !entry.betrag) return { sollOk: false, habenOk: false, betragOk: false };
+  let best = { sollOk: false, habenOk: false, betragOk: false, score: -1 };
+  for (const opt of correctOptions) {
+    const sollOk = opt.sollKeys.some((k) => matchAccount(entry.soll, k));
+    const habenOk = opt.habenKeys.some((k) => matchAccount(entry.haben, k));
+    const betragOk = normalizeNumber(entry.betrag) === normalizeNumber(opt.betrag.toString());
+    const score = (sollOk?1:0) + (habenOk?1:0) + (betragOk?1:0);
+    if (score > best.score) best = { sollOk, habenOk, betragOk, score };
+  }
+  return best;
+};
+
+const displayNames = {
+  forderungen: "Forderungen L+L", verbindlichkeiten: "Verbindlichkeiten L+L",
+  bank: "Bank", kasse: "Kasse",
+  warenbestand: "Warenbestand", warenaufwand: "Warenaufwand", warenertrag: "Warenertrag",
+  dienstleistungsertrag: "Dienstleistungsertrag", personalaufwand: "Personalaufwand", raumaufwand: "Raumaufwand",
+  rohstoffe: "Rohstoffe", halbfabrikate: "Halbfabrikate", fertigfabrikate: "Fertigfabrikate",
+  materialaufwand: "Materialaufwand", produktionsertrag: "Produktionsertrag",
+  nfdl: "Nicht fakturierte Dienstleistungen", bestandsaenderung_nfdl: "Bestandsänderung NFDL",
+};
+
+const istZaehlbar = (f) => f.id && f.typ !== "abschnitt";
+
+// ===== DATEN =====
+
+// Aufgabe 1: Methoden
+const aufgabe1 = {
+  title: "Aufgabe 1: Methode ohne und mit laufender Inventur",
+  subtitle: "Buchungen im Vergleich · Velowerk GmbH",
+  tabLabel: "Aufgabe 1",
+  context: "Identischer Sachverhalt für beide Methoden. Bei der Methode ohne Inventur werden Bewegungen direkt auf Erfolgskonten gebucht; bei der Methode mit Inventur wird der Bestand laufend aktualisiert.",
+  theorie: {
+    title: "Theorie: Zwei Methoden der Warenkontenführung",
+    blocks: [
+      { type: "text", text: "Beim Warenhandel müssen Wareneinkäufe und Verkäufe verbucht werden. Es gibt zwei grundsätzliche Methoden, wie das Konto Warenbestand geführt wird. Beide Methoden führen am Jahresende zum gleichen Bruttogewinn und gleichen Endbestand. Sie unterscheiden sich aber im Buchungsweg und in der laufenden Aktualität." },
+      { type: "subtitle", text: "Methode ohne laufende Inventur" },
+      { type: "text", text: "Während des Jahres werden alle Wareneinkäufe direkt als Warenaufwand und alle Verkäufe direkt als Warenertrag verbucht. Das Konto Warenbestand bleibt unverändert. Erst beim Jahresabschluss wird der tatsächliche Endbestand durch eine Inventur ermittelt und das Bestandskonto entsprechend angepasst." },
+      { type: "vergleich",
+        left: { title: "Vorteile", text: "Einfach in der Anwendung. Geeignet für KMU mit manueller Buchhaltung. Wenige Buchungen während des Jahres." },
+        right: { title: "Nachteile", text: "Lagerwert ist während des Jahres nicht aktuell. Bestandskorrektur am Jahresende zwingend nötig." } },
+      { type: "subtitle", text: "Methode mit laufender Inventur" },
+      { type: "text", text: "Bei dieser Methode wird das Bestandskonto bei jeder Bewegung aktualisiert. Wareneinkäufe gehen direkt auf das Bestandskonto. Bei jedem Verkauf werden zwei Buchungen erstellt: der Erlös zum Verkaufspreis und der Einstand (Warenaufwand) zum Einkaufspreis. Beim Jahresabschluss ist keine Bestandskorrektur mehr nötig." },
+      { type: "vergleich",
+        left: { title: "Vorteile", text: "Bestandskonto jederzeit aktuell. Direkter Überblick über die Marge pro Verkauf. Standard in modernen ERP-Systemen." },
+        right: { title: "Nachteile", text: "Mehr Buchungen während des Jahres. Einstandswert muss bei jedem Verkauf bekannt sein." } },
+      { type: "beispiel", text: "Velowerk verkauft ein Velo für CHF 800, das im Einkauf CHF 500 gekostet hat. Bei der Methode ohne Inventur wird nur der Erlös von 800 gebucht. Bei der Methode mit Inventur werden zwei Buchungen erstellt: 800 als Erlös und 500 als Einstand (Bestandsabbuchung)." },
+      { type: "subtitle", text: "Welche Methode wo? Branchenüblicher Einsatz" },
+      { type: "text", text: "Die Wahl der Methode hängt stark von Branche, Betriebsgrösse und vorhandener Informatik ab. Faustregel: Je grösser das Unternehmen und je komplexer die Bestandsstruktur, desto eher die Methode mit laufender Inventur." },
+      { type: "list", items: [
+        "Handelsbetrieb: KMU mit manueller Buchhaltung oder einfacher Kasse (Quartierladen, kleine Boutique) führen meist OHNE laufende Inventur. Grosse Detailhändler mit Scanner-Kassen und Warenwirtschaftssystem (Migros, Coop, Apotheken-Ketten) nutzen die Methode MIT laufender Inventur – sie ist für Sortimentssteuerung, Lagerumschlag und Margenkontrolle unverzichtbar.",
+        "Dienstleistungsbetrieb: Selten relevant, da kaum Warenbestand vorhanden ist. Wo doch (Coiffeursalon mit Pflegeprodukten, Tierarztpraxis mit Medikamenten, Restaurant mit Getränken), wird meist OHNE laufende Inventur gearbeitet. Schwerpunkt sind hier nicht fakturierte Dienstleistungen (siehe Aufgabe 4), nicht der Warenbestand.",
+        "Produktionsbetrieb: Fast immer MIT laufender Inventur. Grund: Rohstoffe, Halbfabrikate und Fertigfabrikate müssen sauber abgegrenzt werden (siehe Aufgabe 5). Die Kostenträgerrechnung verlangt präzise Bestandsverfolgung und ERP-Systeme wie SAP setzen die permanente Inventur voraus.",
+      ]},
+      { type: "vergleich",
+        left: { title: "Faustregel", text: "Handel klein und Dienstleistung → meist ohne laufende Inventur. Geringer technischer Aufwand, ausreichend für Erfolgsermittlung." },
+        right: { title: "Faustregel", text: "Handel gross und Produktion → fast immer mit laufender Inventur. Notwendig für Sortimentssteuerung, Margenkontrolle und Kostenträgerrechnung." } },
+      { type: "merksatz", text: "Beide Methoden ergeben am Ende denselben Bruttogewinn und denselben Endbestand. Der Unterschied liegt im Buchungsweg und in der Aktualität des Bestandskontos." },
+    ],
+  },
+  sachverhalt: {
+    title: "Sachverhalt: Velowerk GmbH · Geschäftsjahr",
+    intro: "Velowerk handelt mit Velos. Alle Bewegungen über die Bank, Einkäufe und Verkäufe jeweils auf Rechnung.",
+    tabelle: {
+      cols: ["Position", "Betrag (CHF)"],
+      rows: [
+        ["Eröffnungsbestand 1.1.", "80'000"],
+        ["Wareneinkäufe im Jahr (auf Rechnung)", "120'000"],
+        ["Warenverkäufe im Jahr (auf Rechnung)", "200'000"],
+        ["Endbestand laut Inventur 31.12.", "70'000"],
+        ["Bestandsveränderung", "−10'000 (Abnahme)"],
+      ],
+    },
+  },
+  faelle: [
+    { typ: "abschnitt", label: "Teil A · Methode ohne laufende Inventur", farbe: "#1D4ED8",
+      intro: "Wareneinkäufe gehen direkt auf den Aufwand, Verkäufe direkt auf den Ertrag. Das Bestandskonto wird erst beim Abschluss korrigiert." },
+    { id: "1-A1", label: "A1 · Wareneinkauf im Jahr", text: "Wir kaufen während des Jahres Waren auf Rechnung im Wert von CHF 120'000.",
+      loesungen: [[{ sollKeys: ["warenaufwand"], habenKeys: ["verbindlichkeiten"], betrag: 120000 }]] },
+    { id: "1-A2", label: "A2 · Warenverkauf im Jahr", text: "Wir verkaufen Waren auf Rechnung für CHF 200'000.",
+      loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["warenertrag"], betrag: 200000 }]] },
+    { id: "1-A3", label: "A3 · Abschluss · Bestandsanpassung", text: "Per 31.12.: Anfangsbestand CHF 80'000, Endbestand laut Inventur CHF 70'000. Bestandsabnahme um CHF 10'000 verbuchen.",
+      loesungen: [[{ sollKeys: ["warenaufwand"], habenKeys: ["warenbestand"], betrag: 10000 }]] },
+    { typ: "abschnitt", label: "Teil B · Methode mit laufender Inventur", farbe: "#15803D",
+      intro: "Identischer Sachverhalt wie Teil A (Anfangsbestand 80'000, Einkäufe 120'000, Verkäufe 200'000, Endbestand 70'000) – nur die Buchungsweise ändert sich. Einkäufe gehen direkt auf das Bestandskonto, bei jedem Verkauf wird der Einstand sofort abgebucht. Bevor wir die Buchungen machen, müssen wir wissen, wie viel Ware insgesamt zum Einstandspreis verkauft wurde." },
+    { id: "1-B1", typ: "kennzahl", label: "B1 · Berechnung Einstand der verkauften Ware",
+      text: "Berechne aus dem Sachverhalt den Gesamtwert der im Jahr verkauften Ware zu Einstandspreisen. Formel: Anfangsbestand + Einkäufe − Endbestand. Werte: Anfangsbestand 80'000, Einkäufe 120'000, Endbestand 70'000.",
+      erwartet: 130000, einheit: "CHF", toleranz: 0,
+      loesung: "Einstand = 80'000 + 120'000 − 70'000 = CHF 130'000. Logik: Was am Anfang im Lager war (80'000) plus alles was eingekauft wurde (120'000) ergibt das verfügbare Warenvolumen (200'000). Davon sind am Ende noch 70'000 da, also sind 130'000 rausgegangen zum Einstandswert. Probe über den Bruttogewinn: Verkaufserlös 200'000 − Einstand 130'000 = Bruttogewinn 70'000." },
+    { id: "1-B2", label: "B2 · Wareneinkauf im Jahr", text: "Wir kaufen während des Jahres Waren auf Rechnung im Wert von CHF 120'000 (gleicher Wert wie A1, aber jetzt direkt auf das Bestandskonto).",
+      loesungen: [[{ sollKeys: ["warenbestand"], habenKeys: ["verbindlichkeiten"], betrag: 120000 }]] },
+    { id: "1-B3", label: "B3 · Warenverkauf · Erlös", text: "Wir verkaufen Waren auf Rechnung für CHF 200'000 (gleicher Wert wie A2). Buchung des Erlöses zum Verkaufspreis.",
+      loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["warenertrag"], betrag: 200000 }]] },
+    { id: "1-B4", label: "B4 · Warenverkauf · Einstand", text: "Gleichzeitig zur Erlösbuchung in B3: Einstand der verkauften Ware abbuchen. Den Einstandswert hast du in B1 berechnet (CHF 130'000).",
+      loesungen: [[{ sollKeys: ["warenaufwand"], habenKeys: ["warenbestand"], betrag: 130000 }]] },
+    { id: "1-B5", label: "B5 · Abschluss", text: "Welche Buchung ist beim Jahresabschluss nötig?", keineEingabe: true,
+      loesung: "Keine Buchung nötig. Das Bestandskonto ist durch die laufenden Buchungen automatisch auf dem korrekten Endbestand: 80'000 (Anfang) + 120'000 (Einkauf) − 130'000 (Verkaufs-Einstand) = CHF 70'000. Genau das verspricht die laufende Inventur: jederzeit aktueller Bestand ohne Abschlussbuchung." },
+  ],
+  vergleich: {
+    title: "Direktvergleich beider Methoden",
+    subtitle: "Identischer Sachverhalt, identisches Resultat",
+    cols: ["Position", "Ohne laufende Inventur", "Mit laufender Inventur"],
+    rows: [
+      ["Buchungen während des Jahres", "2 (Einkauf, Verkauf)", "3 (Einkauf, Erlös, Einstand)"],
+      ["Buchungen am Abschluss", "1 (Bestandskorrektur)", "0 (keine nötig)"],
+      ["Aktualität Bestandskonto", "nur am Jahresende korrekt", "jederzeit aktuell"],
+      ["Warenaufwand total", "120'000 + 10'000 = 130'000", "130'000 (sofort gebucht)"],
+      ["Bruttogewinn (200'000 minus 130'000)", "70'000", "70'000"],
+      ["Endbestand 31.12.", "70'000", "70'000"],
+      ["Praxis", "KMU, manuelle Buchhaltung", "ERP-Systeme, Grossunternehmen"],
+    ],
+    merksatz: "Beide Methoden ergeben das gleiche Resultat. Die Methode ohne Inventur ist einfacher in der Anwendung, dafür ist der Bestand während des Jahres nicht aktuell. Die Methode mit Inventur ist aufwändiger, dafür ist der Bestand jederzeit korrekt – Standard in modernen ERP-Systemen.",
+  },
+};
+
+// Aufgabe 2: Vorratbewertung
+const aufgabe2 = {
+  title: "Aufgabe 2: Vorratbewertung nach LIFO und Durchschnitt",
+  subtitle: "Velowerk City Cruiser · Endbestand bewerten",
+  tabLabel: "Aufgabe 2",
+  context: "Drei Einkaufstranchen zu unterschiedlichen Preisen, 230 Stück verkauft, 70 im Lager. Die zwei Verfahren ergeben verschiedene Werte.",
+  theorie: {
+    title: "Theorie: Vorratbewertung – FIFO, LIFO und Durchschnitt",
+    blocks: [
+      { type: "text", text: "Wenn ein Unternehmen während des Jahres Ware zu unterschiedlichen Preisen einkauft, stellt sich am Jahresende die Frage: Mit welchem Preis bewerten wir den Endbestand? Da die Ware physisch identisch ist (z.B. 70 Velos vom selben Modell), kann man die einzelnen Stücke meist nicht mehr einer Einkaufstranche zuordnen. Darum braucht es eine Bewertungsmethode als Annahme über den Materialfluss." },
+      { type: "subtitle", text: "FIFO – First In, First Out" },
+      { type: "text", text: "Die zuerst gekauften Stücke werden zuerst verkauft. Im Lager bleiben die jüngsten Bestände zu den aktuellsten Preisen. Diese Methode entspricht dem tatsächlichen Materialfluss und ist bei verderblichen Gütern (Lebensmittel, Medikamente) zwingend." },
+      { type: "subtitle", text: "LIFO – Last In, First Out" },
+      { type: "text", text: "Die zuletzt gekauften Stücke werden zuerst verkauft. Im Lager bleiben die ältesten Bestände zu den ältesten Preisen. Diese Methode wird vor allem in Ländern mit hoher Inflation angewendet, weil sie den Aufwand und damit die Steuerlast senkt." },
+      { type: "subtitle", text: "Gewichteter Durchschnittspreis" },
+      { type: "text", text: "Alle Einkäufe werden zu einem Mischpreis gemittelt. Endbestand und Warenaufwand werden mit demselben Durchschnittspreis bewertet. Dieser Mittelweg zwischen FIFO und LIFO ist in der Schweizer Praxis am häufigsten anzutreffen." },
+      { type: "formel", text: "Mischpreis = Total Wert ÷ Total Stück     |     Endbestand-Wert = Stückzahl × Mischpreis" },
+      { type: "vergleich",
+        left: { title: "Bei steigenden Preisen", text: "FIFO: höherer Lagerwert, höherer Gewinn, höhere Steuern. LIFO: tieferer Lagerwert, tieferer Gewinn, tiefere Steuern. Durchschnitt liegt dazwischen." },
+        right: { title: "Bei fallenden Preisen", text: "FIFO: tieferer Lagerwert, tieferer Gewinn. LIFO: höherer Lagerwert, höherer Gewinn. Der Effekt kehrt sich um." } },
+      { type: "beispiel", text: "Velowerk kauft im Januar 80 Velos zu CHF 450, im April 120 zu CHF 480, im September 100 zu CHF 510. Verkauft werden 230 Stück, im Lager bleiben 70. Je nach Methode liegt der Lagerwert zwischen CHF 31'500 (LIFO) und CHF 35'700 (FIFO) – eine Differenz von 4'200 CHF, die als stille Reserve interpretiert werden kann." },
+      { type: "merksatz", text: "OR erlaubt alle drei Verfahren. IFRS (IAS 2) verbietet LIFO seit 2005. Swiss GAAP FER sieht LIFO als verpönt. In der Schweizer KMU-Praxis dominieren heute FIFO und Durchschnitt." },
+    ],
+  },
+  sachverhalt: {
+    title: "Sachverhalt: Velowerk GmbH · Modell City Cruiser",
+    intro: "Velowerk bewertet zum Jahresende den Lagerbestand des Modells City Cruiser. Im Laufe des Jahres wurden drei Tranchen zu unterschiedlichen Einkaufspreisen beschafft. Insgesamt wurden 230 Stück verkauft.",
+    tabelle: {
+      cols: ["Datum", "Vorgang", "Stück", "Stückpreis (CHF)", "Wert (CHF)"],
+      rows: [
+        ["01.01.", "Anfangsbestand", "80", "450.00", "36'000"],
+        ["15.04.", "Zukauf 1", "120", "480.00", "57'600"],
+        ["10.09.", "Zukauf 2", "100", "510.00", "51'000"],
+        ["Total verfügbar", "", "300", "—", "144'600"],
+        ["", "Verkauf im Jahr", "230", "—", ""],
+        ["31.12.", "Endbestand", "70", "?", "?"],
+      ],
+    },
+  },
+  faelle: [
+    { typ: "abschnitt", label: "Teil A · Vorbereitung", farbe: "#1B6B63" },
+    { id: "2-A1", typ: "kennzahl", label: "A1 · Total verfügbare Stückzahl",
+      text: "Wie viele Stück City Cruiser sind insgesamt verfügbar?",
+      erwartet: 300, einheit: "Stück", toleranz: 0,
+      loesung: "Anfangsbestand 80 + Zukauf 1 (120) + Zukauf 2 (100) = 300 Stück" },
+    { id: "2-A2", typ: "kennzahl", label: "A2 · Total verfügbarer Wert",
+      text: "Welcher Gesamteinkaufswert (CHF) steht zur Verfügung?",
+      erwartet: 144600, einheit: "CHF", toleranz: 0,
+      loesung: "36'000 + 57'600 + 51'000 = 144'600 CHF" },
+    { id: "2-A3", typ: "kennzahl", label: "A3 · Endbestand Menge",
+      text: "Wie viele Stück sind per 31.12. noch im Lager?",
+      erwartet: 70, einheit: "Stück", toleranz: 0,
+      loesung: "300 verfügbar minus 230 verkauft = 70 Stück" },
+    { typ: "abschnitt", label: "Teil B · Bewertung nach FIFO", farbe: "#15803D",
+      intro: "FIFO unterstellt, dass die zuerst gekauften Stücke zuerst verkauft werden. Im Lager bleiben die jüngsten Bestände zu den aktuellsten Preisen." },
+    { id: "2-B1", typ: "kennzahl", label: "B1 · FIFO-Stückpreis für Endbestand",
+      text: "Mit welchem Stückpreis (CHF) bewertet FIFO die 70 Stück Endbestand?",
+      erwartet: 510, einheit: "CHF/Stück", toleranz: 0,
+      loesung: "Bei FIFO bleiben die jüngsten Stücke im Lager, also der letzte Zukauf vom 10.09. zu CHF 510 pro Stück." },
+    { id: "2-B2", typ: "kennzahl", label: "B2 · FIFO-Endbestand Wert",
+      text: "Wie hoch ist der Lagerwert (CHF) per 31.12. nach FIFO?",
+      erwartet: 35700, einheit: "CHF", toleranz: 0,
+      loesung: "70 Stück × CHF 510 = CHF 35'700" },
+    { id: "2-B3", typ: "kennzahl", label: "B3 · FIFO-Warenaufwand",
+      text: "Wie hoch ist der Warenaufwand (CHF) im laufenden Jahr nach FIFO?",
+      erwartet: 108900, einheit: "CHF", toleranz: 0,
+      loesung: "Total verfügbar 144'600 minus Endbestand 35'700 = Warenaufwand 108'900 CHF. Buchhalterischer Übertrag: Bei Methode mit laufender Inventur wird der Einstand laufend während des Jahres bei jedem Verkauf abgebucht (vgl. Aufgabe 1, Teil B). Bei Methode ohne laufende Inventur erfolgt die Anpassung am Jahresabschluss als Bestandsdifferenz." },
+    { typ: "abschnitt", label: "Teil C · Bewertung nach LIFO", farbe: "#1D4ED8",
+      intro: "LIFO unterstellt, dass die zuletzt gekauften Stücke zuerst verkauft werden. Im Lager bleiben die ältesten Bestände." },
+    { id: "2-C1", typ: "kennzahl", label: "C1 · LIFO-Stückpreis für Endbestand",
+      text: "Mit welchem Stückpreis (CHF) bewertet LIFO die 70 Stück Endbestand?",
+      erwartet: 450, einheit: "CHF/Stück", toleranz: 0,
+      loesung: "Bei LIFO bleiben die ältesten Stücke im Lager, also der Anfangsbestand zu CHF 450 pro Stück." },
+    { id: "2-C2", typ: "kennzahl", label: "C2 · LIFO-Endbestand Wert",
+      text: "Wie hoch ist der Lagerwert (CHF) per 31.12. nach LIFO?",
+      erwartet: 31500, einheit: "CHF", toleranz: 0,
+      loesung: "70 Stück × CHF 450 = CHF 31'500" },
+    { id: "2-C3", typ: "kennzahl", label: "C3 · LIFO-Warenaufwand",
+      text: "Wie hoch ist der Warenaufwand (CHF) im laufenden Jahr nach LIFO?",
+      erwartet: 113100, einheit: "CHF", toleranz: 0,
+      loesung: "Total verfügbar 144'600 minus Endbestand 31'500 = Warenaufwand 113'100 CHF. Buchhalterischer Übertrag: Bei Methode mit laufender Inventur wird der Einstand laufend während des Jahres bei jedem Verkauf abgebucht (vgl. Aufgabe 1, Teil B). Bei Methode ohne laufende Inventur erfolgt die Anpassung am Jahresabschluss als Bestandsdifferenz." },
+    { typ: "abschnitt", label: "Teil D · Bewertung nach Durchschnitt", farbe: "#0F766E",
+      intro: "Die Durchschnittsmethode mittelt alle Einkäufe zu einem Mischpreis. Endbestand und Warenaufwand werden mit demselben Durchschnittspreis bewertet." },
+    { id: "2-D1", typ: "kennzahl", label: "D1 · Mischpreis (gewichteter Durchschnitt)",
+      text: "Wie hoch ist der Mischpreis (CHF) pro Stück, also der gewichtete Durchschnitt aller Einkäufe?",
+      erwartet: 482, einheit: "CHF/Stück", toleranz: 0.5,
+      loesung: "Mischpreis = Total Wert 144'600 ÷ Total Stück 300 = CHF 482.00 pro Stück. «Gewichtet» heisst: jeder Einkaufspreis zählt entsprechend seiner Stückzahl. Tranche 2 mit 120 Stück hat mehr Gewicht im Durchschnitt als der Anfangsbestand mit 80 Stück." },
+    { id: "2-D2", typ: "kennzahl", label: "D2 · Durchschnitts-Endbestand Wert",
+      text: "Wie hoch ist der Lagerwert (CHF) per 31.12. nach Durchschnitt?",
+      erwartet: 33740, einheit: "CHF", toleranz: 5,
+      loesung: "70 Stück × CHF 482 = CHF 33'740" },
+    { id: "2-D3", typ: "kennzahl", label: "D3 · Durchschnitts-Warenaufwand",
+      text: "Wie hoch ist der Warenaufwand (CHF) im laufenden Jahr nach Durchschnitt?",
+      erwartet: 110860, einheit: "CHF", toleranz: 5,
+      loesung: "Total verfügbar 144'600 minus Endbestand 33'740 = Warenaufwand 110'860 CHF. Buchhalterischer Übertrag: Bei Methode mit laufender Inventur wird der Einstand laufend während des Jahres bei jedem Verkauf abgebucht (vgl. Aufgabe 1, Teil B). Bei Methode ohne laufende Inventur erfolgt die Anpassung am Jahresabschluss als Bestandsdifferenz." },
+    { typ: "abschnitt", label: "Teil E · Vergleich und Reflexion", farbe: "#A85930" },
+    { id: "2-E1", typ: "kennzahl", label: "E1 · Differenz FIFO vs. LIFO",
+      text: "Um wie viel CHF ist der Endbestand bei FIFO höher als bei LIFO?",
+      erwartet: 4200, einheit: "CHF", toleranz: 5,
+      loesung: "FIFO 35'700 minus LIFO 31'500 = 4'200 CHF höher bei FIFO. Das ist die maximale stille Reserve, die durch die Methodenwahl entsteht." },
+    { id: "2-E2", typ: "interpretation", label: "E2 · Auswirkung auf Bilanz und Erfolgsrechnung",
+      text: "Was bedeuten die Differenzen zwischen den drei Verfahren für die Bilanz und die Erfolgsrechnung von Velowerk?",
+      musterloesung: [
+        "FIFO produziert den höchsten Endbestand (35'700) und damit den tiefsten Warenaufwand (108'900) und höchsten Gewinn.",
+        "LIFO produziert den tiefsten Endbestand (31'500) und damit den höchsten Warenaufwand (113'100) und tiefsten Gewinn.",
+        "Durchschnitt liegt dazwischen (Endbestand 33'740, Warenaufwand 110'860).",
+        "Stille Reserven: Wer LIFO statt FIFO wählt, hält 4'200 CHF stille Reserve im Lager.",
+        "Steuerwirkung: LIFO senkt kurzfristig die Steuern, weil der Gewinn tiefer ausgewiesen wird (Steuerstundungseffekt).",
+      ] },
+    { id: "2-E3", typ: "interpretation", label: "E3 · OR vs. IFRS",
+      text: "Welche Methoden erlaubt das OR? Welche IFRS? Welche Methode würde Velowerk wählen, wenn das Unternehmen kotiert wäre?",
+      musterloesung: [
+        "OR: Erlaubt FIFO, LIFO und Durchschnitt. Stille Reserven sind grundsätzlich zulässig (Vorsichtsprinzip nach Art. 960a OR).",
+        "IFRS (IAS 2): LIFO ist seit 2005 verboten. Erlaubt sind nur FIFO und Durchschnitt. Begründung: LIFO verzerrt bei steigenden Preisen das wahre Bild des Vermögens.",
+        "Konsequenz für ein kotiertes Velowerk: Müsste IFRS anwenden und auf FIFO oder Durchschnitt wechseln. Wechsel von LIFO zu FIFO würde stille Reserven aufdecken und den Eigenkapitalwert erhöhen.",
+        "Praktisch: Auch unter OR wenden viele Schweizer KMU heute FIFO oder Durchschnitt an, weil sie einfach zu rechnen und international anschlussfähig sind.",
+      ] },
+  ],
+  vergleich: {
+    title: "Direktvergleich FIFO, LIFO und Durchschnitt",
+    subtitle: "So unterschiedlich bewertet derselbe physische Lagerbestand",
+    cols: ["Position", "FIFO", "LIFO", "Durchschnitt"],
+    rows: [
+      ["Stückpreis Endbestand", "CHF 510", "CHF 450", "CHF 482"],
+      ["Endbestand Wert (Bilanz)", "CHF 35'700", "CHF 31'500", "CHF 33'740"],
+      ["Warenaufwand (ER)", "CHF 108'900", "CHF 113'100", "CHF 110'860"],
+      ["Gewinneffekt (relativ zu Durchschnitt)", "+1'960", "−2'240", "0 (Basis)"],
+      ["Stille Reserve im Lager", "0 (Basis)", "CHF 4'200", "CHF 1'960"],
+    ],
+    merksatz: "Bei steigenden Einkaufspreisen produziert FIFO den höchsten Lagerwert und höchsten Gewinn, LIFO den tiefsten. Durchschnitt liegt dazwischen. Wer LIFO wählt, schafft die grösste stille Reserve – aber IFRS verbietet das seit 2005.",
+  },
+};
+
+// Aufgabe 3: Verfahren der Lagerbewertung
+const aufgabe3 = {
+  title: "Aufgabe 3: Vier Verfahren der Lagerbewertung",
+  subtitle: "FIFO, LIFO, Durchschnitt und Verrechnungspreise",
+  tabLabel: "Aufgabe 3",
+  context: "Fünf Multiple-Choice-Fragen zu den Eigenschaften der vier Bewertungsverfahren plus eine Reflexion. Die Übersichtstabelle steht am Ende als Selbstkontrolle bereit.",
+  theorie: {
+    title: "Theorie: Vier Verfahren der Lagerbewertung im Überblick",
+    blocks: [
+      { type: "text", text: "Neben FIFO, LIFO und Durchschnitt gibt es in der Praxis ein viertes Verfahren: die Verrechnungspreise (auch Standardkosten genannt). Während die ersten drei Verfahren mit Ist-Preisen arbeiten, verwenden Verrechnungspreise feste Kalkulationspreise. Hier ein kompakter Überblick aller vier Methoden, ihrer Anwendung und Beurteilung." },
+      { type: "subtitle", text: "FIFO (First In, First Out)" },
+      { type: "list", items: [
+        "Anwendung: Jeder Einkauf wird chronologisch nach Datum festgehalten",
+        "Bewertung: Älteste Artikel werden zuerst ausgebucht",
+        "Beurteilung: Entspricht dem tatsächlichen Materialfluss; bei verderblichen Gütern zwingend",
+      ]},
+      { type: "subtitle", text: "LIFO (Last In, First Out)" },
+      { type: "list", items: [
+        "Anwendung: Wie FIFO chronologische Erfassung, aber umgekehrte Auslagerung",
+        "Bewertung: Zuletzt eingelagerte Artikel werden zuerst ausgeliefert",
+        "Beurteilung: Heute weniger üblich, in Swiss GAAP FER verpönt; Anwendung vor allem in Hochinflations-Ländern",
+      ]},
+      { type: "subtitle", text: "Gewichteter Durchschnittspreis" },
+      { type: "list", items: [
+        "Anwendung: Bei jedem Einkauf wird ein neuer Durchschnittswert errechnet",
+        "Bewertung: Lagerbezüge erfolgen zum laufenden Durchschnittspreis",
+        "Beurteilung: In der Schweizer Praxis am häufigsten; geringe Anforderungen an ERP-Systeme",
+      ]},
+      { type: "subtitle", text: "Verrechnungspreise (Standardkosten)" },
+      { type: "list", items: [
+        "Anwendung: Für jeden Artikel ist ein fester Verrechnungspreis hinterlegt (meist jährlich)",
+        "Bewertung: Ein- und Auslagerungen zum Standardpreis; Differenzen separat ausgewiesen",
+        "Beurteilung: Vorteilhaft für Kostenrechnung und Kalkulation; bei stark schwankenden Marktpreisen ungeeignet",
+      ]},
+      { type: "vergleich",
+        left: { title: "Inventurmethode", text: "Frage: Wie führe ich das Lager? Antwort: ohne laufende Inventur oder mit laufender Inventur. Bestimmt den Buchungsweg." },
+        right: { title: "Bewertungsmethode", text: "Frage: Wie bewerte ich die Ware? Antwort: FIFO, LIFO, Durchschnitt oder Verrechnungspreise. Bestimmt den Wert pro Stück." } },
+      { type: "merksatz", text: "Inventur- und Bewertungsmethode sind zwei unabhängige Entscheidungen. In der Praxis kombinieren KMU meistens «mit laufender Inventur + FIFO» oder «mit laufender Inventur + Durchschnitt»." },
+    ],
+  },
+  faelle: [
+    { id: "3-C1", typ: "multiplechoice", label: "C1 · Tatsächlicher Materialfluss",
+      text: "Welches Verfahren entspricht dem tatsächlichen Materialfluss und wird bei verderblichen Gütern zwingend angewendet?",
+      antworten: ["FIFO (First In, First Out)", "LIFO (Last In, First Out)", "Gewichteter Durchschnittspreis", "Verrechnungspreise (Standardkosten)"],
+      korrekt: 0,
+      loesung: "FIFO. Die zuerst eingetroffenen Artikel werden zuerst verbraucht. Bei Lebensmitteln, Medikamenten und anderen verderblichen Gütern ist FIFO zwingend, weil Ware sonst verfällt." },
+    { id: "3-C2", typ: "multiplechoice", label: "C2 · Berechnung Mischpreis",
+      text: "Bei welchem Verfahren werden bei jedem Einkauf die vorhandenen Bestände und der neue Einkauf addiert, um einen neuen Wert zu ermitteln?",
+      antworten: ["FIFO", "LIFO", "Gewichteter Durchschnittspreis", "Verrechnungspreise"],
+      korrekt: 2,
+      loesung: "Gewichteter Durchschnittspreis. Bei jedem Zugang wird ein neuer Durchschnitt berechnet. In der Schweizer Praxis am häufigsten, weil ERP-Systeme das ohne Aufwand können." },
+    { id: "3-C3", typ: "multiplechoice", label: "C3 · Inflation und Preisweitergabe",
+      text: "Welches Verfahren wird vor allem in Ländern mit hoher Inflationsrate angewendet, weil Preissteigerungen so weitergegeben werden können?",
+      antworten: ["FIFO", "LIFO", "Durchschnitt", "Verrechnungspreise"],
+      korrekt: 1,
+      loesung: "LIFO. Bei steigenden Preisen wird die zuletzt (teuerste) eingekaufte Ware zuerst verbraucht, was den Aufwand erhöht und den Gewinn senkt. In Hochinflations-Ländern hilft das, die Steuerlast zu drücken." },
+    { id: "3-C4", typ: "multiplechoice", label: "C4 · Swiss GAAP FER",
+      text: "Welches Verfahren ist heute weniger üblich und in Swiss GAAP FER sowie IFRS verpönt oder verboten?",
+      antworten: ["FIFO", "LIFO", "Durchschnitt", "Verrechnungspreise"],
+      korrekt: 1,
+      loesung: "LIFO. Swiss GAAP FER und IFRS (IAS 2) lehnen LIFO ab, weil es bei steigenden Preisen den Vorratsbestand zu tief ausweist und das wahre Vermögensbild verzerrt. OR erlaubt LIFO formal noch, in der Praxis kaum mehr im Einsatz." },
+    { id: "3-C5", typ: "multiplechoice", label: "C5 · Konstante Preise",
+      text: "Welches Verfahren bietet Vorteile für Betriebsabrechnung und Kalkulation durch konstante Preise, ist aber bei grossen Preisschwankungen weniger geeignet?",
+      antworten: ["FIFO", "LIFO", "Durchschnitt", "Verrechnungspreise (Standardkosten)"],
+      korrekt: 3,
+      loesung: "Verrechnungspreise (Standardkosten). Für jeden Artikel wird ein fester Preis hinterlegt, meist jährlich. Vorteil: stabile Grundlage für Kalkulation. Nachteil: bei stark schwankenden Marktpreisen entstehen grosse Preisdifferenzen, die separat ausgewiesen werden müssen." },
+    { id: "3-C6", typ: "multiplechoice", label: "C6 · Inventur vs. Bewertung",
+      text: "Welche Aussage zum Verhältnis von Inventurmethode und Bewertungsmethode trifft zu?",
+      antworten: ["Die Inventurmethode bestimmt die Bewertung", "Beide sind unabhängig kombinierbar", "FIFO funktioniert nur ohne laufende Inventur", "Mit laufender Inventur ist nur Durchschnitt möglich"],
+      korrekt: 1,
+      loesung: "Beide sind unabhängig kombinierbar. Die Inventurmethode beantwortet die Frage «Wie führe ich das Lager?» (ohne oder mit laufender Inventur), die Bewertungsmethode beantwortet «Wie bewerte ich die Ware?» (FIFO/LIFO/Durchschnitt/Verrechnungspreise). In der Praxis ist die Kombination «Mit laufender Inventur + FIFO» am häufigsten, aber technisch funktioniert jede Kombination." },
+    { id: "3-C7", typ: "interpretation", label: "C7 · Empfehlung für Velowerk",
+      text: "Welches Verfahren würden Sie Velowerk empfehlen und warum? Berücksichtigen Sie Eigenschaften der Ware (Velos, Modetrends, Komponenten), Praxistauglichkeit und Norm-Konformität.",
+      musterloesung: [
+        "Empfehlung: Gewichteter Durchschnittspreis oder FIFO. Beide sind nach OR, Swiss GAAP FER und IFRS zulässig.",
+        "Argument FIFO: Velos sind nicht verderblich, aber Modetrends (Farben, Designs) und technische Komponenten altern. FIFO sichert, dass alte Modelle zuerst verkauft werden.",
+        "Argument Durchschnitt: Einfach in der Anwendung, jeder ERP-Standard kann es. Reduziert Aufwand und ist praktisch fehlerfrei.",
+        "Gegen LIFO: Verpönt unter Swiss GAAP FER, kaum noch im Einsatz. Verzerrt das Vermögensbild bei steigenden Preisen.",
+        "Gegen Verrechnungspreise: Erfordert ein ERP-System mit Standardkostenrechnung. Für ein KMU wie Velowerk übertrieben.",
+      ] },
+  ],
+  verfahrensTabelle: {
+    title: "Übersicht: Vier Verfahren der Lagerbewertung",
+    subtitle: "Anwendung, Bewertung und Beurteilung im Direktvergleich",
+    cols: ["Verfahren", "Anwendung", "Bewertung Lagerbezüge", "Beurteilung"],
+    rows: [
+      { verfahren: "FIFO", verfahrenSub: "First In, First Out", farbe: "blue",
+        anwendung: "Jeder Einkauf wird chronologisch nach Datum festgehalten.",
+        bewertung: "Lagerbezüge erfolgen in der Reihenfolge des Einkaufs. Zuerst eingelagerte Artikel werden zuerst ausgebucht.",
+        beurteilung: "Entspricht dem tatsächlichen Materialfluss. Bei verderblichen Gütern zwingend." },
+      { verfahren: "LIFO", verfahrenSub: "Last In, First Out", farbe: "rose",
+        anwendung: "Jeder Einkauf wird chronologisch festgehalten.",
+        bewertung: "Lagerbezüge erfolgen in umgekehrter Reihenfolge. Zuletzt eingelagerte Artikel werden zuerst ausgeliefert.",
+        beurteilung: "Heute weniger üblich, in Swiss GAAP FER verpönt. Anwendung in Ländern mit hoher Inflation." },
+      { verfahren: "Gewichteter Durchschnitt", verfahrenSub: "Mischpreis nach jedem Zugang", farbe: "green",
+        anwendung: "Bei jedem Einkauf werden Bestand und Einkauf addiert. Daraus wird ein neuer Durchschnittswert ermittelt.",
+        bewertung: "Lagerbezüge erfolgen zum aktuellen Durchschnittspreis, der laufend errechnet wird.",
+        beurteilung: "Häufig anzutreffen. Stellt an ERP-Systeme wenig Anforderungen." },
+      { verfahren: "Verrechnungspreise", verfahrenSub: "Standardkosten", farbe: "amber",
+        anwendung: "Für jeden Artikel ist ein Verrechnungspreis hinterlegt. Ein- und Auslagerungen erfolgen zu diesem Preis. Preisdifferenzen werden separat ausgewiesen.",
+        bewertung: "Lagerbezüge erfolgen immer zum hinterlegten Verrechnungspreis (in der Regel jährlich festgelegt).",
+        beurteilung: "Vorteilhaft für Betriebsabrechnung und Kalkulation durch konstante Preise. Bei grossen Preisschwankungen ungeeignet." },
+    ],
+  },
+};
+
+// Aufgabe 4: Konten im Dienstleistungsunternehmen
+const aufgabe4 = {
+  title: "Aufgabe 4: Konten im Dienstleistungsunternehmen",
+  subtitle: "Steiner & Partner Rechtsanwälte AG · Buchungen und Konzept",
+  tabLabel: "Aufgabe 4",
+  context: "Dienstleistungsbetriebe haben kein Lager und keine physischen Produkte. Hauptkonten sind Dienstleistungsertrag, Personalaufwand (dominant) und Raumaufwand.",
+  theorie: {
+    title: "Theorie: Buchhaltung im Dienstleistungsunternehmen",
+    blocks: [
+      { type: "text", text: "Dienstleistungsunternehmen verkaufen keine physische Ware, sondern Leistungen. Sie machen in der Schweiz rund 75 bis 83 Prozent aller Unternehmen aus. Dazu gehören Banken, Treuhänder, Anwälte, Berater, IT-Firmen, Coiffeure, Ärzte und viele mehr. Buchhalterisch unterscheiden sie sich grundlegend von Handelsbetrieben." },
+      { type: "subtitle", text: "Hauptkonten" },
+      { type: "list", items: [
+        "Ertrag: Dienstleistungsertrag (auch Honorarertrag oder Beratungsertrag)",
+        "Aufwand dominant: Personalaufwand (Mitarbeitende sind das Produktionsmittel)",
+        "Weitere Aufwände: Raumaufwand, Verwaltung, Marketing, Abschreibungen",
+        "Aktiva: Bank, Forderungen L+L, eventuell NFDL",
+        "Passiva: Verbindlichkeiten L+L",
+      ]},
+      { type: "subtitle", text: "Was es NICHT gibt" },
+      { type: "list", items: [
+        "Kein Warenbestand (keine physische Ware)",
+        "Kein Warenaufwand, kein Warenertrag",
+        "Keine Lagerbewertung (FIFO, LIFO, Durchschnitt entfällt)",
+        "Keine Inventur im klassischen Sinne",
+      ]},
+      { type: "subtitle", text: "Nicht fakturierte Dienstleistungen (NFDL)" },
+      { type: "text", text: "Das wichtigste Spezialkonto im Dienstleistungsbetrieb. Wenn am Jahresende Leistungen erbracht, aber noch nicht in Rechnung gestellt wurden, müssen sie aktiviert werden – analog zum Warenbestand bei Handelsbetrieben. Das Gegenkonto heisst «Bestandsänderung NFDL» und wird als Ertrag verbucht." },
+      { type: "beispiel", text: "Ein Finanzplaner leistet im Dezember 5 Stunden Beratung à CHF 250, die Rechnung folgt erst im Januar. Per 31.12. wird der Wert von CHF 1'250 aktiviert: «Nicht fakturierte Dienstleistungen / Bestandsänderung NFDL 1'250». Bei der Fakturierung im Januar wird die NFDL-Position wieder aufgelöst, und der Erlös läuft regulär über das Konto Dienstleistungsertrag." },
+      { type: "vergleich",
+        left: { title: "NFDL", text: "Bereits erbrachte, noch nicht verrechnete Leistung. Operative Wertschöpfung hat stattgefunden, Rechnung folgt. Erhöht den Periodenertrag." },
+        right: { title: "Transitorische Aktive", text: "Klassische zeitliche Abgrenzung. Vorgang ist abgeschlossen (z.B. vorausbezahlte Versicherung), nur der Zeitpunkt wird korrigiert. Erfolgsneutral." } },
+      { type: "merksatz", text: "NFDL und Warenbestand folgen demselben Prinzip: bereits geschaffene Werte werden in der Bilanz sichtbar gemacht. Im Handel ist es das physische Lager, im Dienstleistungsbetrieb das geistige Lager an offenen Leistungen." },
+    ],
+  },
+  sachverhalt: {
+    title: "Sachverhalt: Steiner & Partner Rechtsanwälte AG",
+    intro: "Die Anwaltskanzlei in Zürich beschäftigt 12 Mitarbeitende und erbringt Rechtsberatung für Unternehmen und Privatpersonen. Es gibt kein Lager und keine physischen Produkte. Der grösste Aufwandsblock ist Personal.",
+    tabelle: {
+      cols: ["Konto-Typ", "Typische Konten"],
+      rows: [
+        ["Aktiv", "Bank, Forderungen L+L"],
+        ["Passiv", "Verbindlichkeiten L+L"],
+        ["Ertrag", "Dienstleistungsertrag (Honorare)"],
+        ["Aufwand", "Personalaufwand (dominant), Raumaufwand"],
+      ],
+    },
+  },
+  faelle: [
+    { typ: "abschnitt", label: "Teil A · Typische Buchungen", farbe: "#15803D" },
+    { id: "4-A1", label: "A1 · Honorarrechnung an Klienten", text: "Wir stellen einem Klienten eine Honorarrechnung über CHF 15'000 (auf Rechnung).",
+      loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["dienstleistungsertrag"], betrag: 15000 }]] },
+    { id: "4-A2", label: "A2 · Lohnzahlung Mitarbeitende", text: "Wir bezahlen die Monatslöhne der Mitarbeitenden über CHF 45'000 via Bank.",
+      loesungen: [[{ sollKeys: ["personalaufwand"], habenKeys: ["bank"], betrag: 45000 }]] },
+    { id: "4-A3", label: "A3 · Mietzahlung Büro", text: "Wir bezahlen die Büromiete CHF 5'000 via Bank.",
+      loesungen: [[{ sollKeys: ["raumaufwand"], habenKeys: ["bank"], betrag: 5000 }]] },
+    { typ: "abschnitt", label: "Teil B · Nicht fakturierte Dienstleistungen (NFDL)", farbe: "#0F766E",
+      intro: "NFDL sind bereits erbrachte, aber noch nicht verrechnete Leistungen. Sie werden am Jahresende aktiviert (analog zum Warenbestand bei Handelsbetrieben). Bei der späteren Fakturierung wird die Position wieder aufgelöst." },
+    { id: "4-B1", label: "B1 · Aktivierung NFDL am Jahresende", text: "Per 31.12. sind 5 Stunden Beratung à CHF 250 geleistet, aber noch nicht in Rechnung gestellt (Wert: CHF 1'250). Die offene Leistung wird aktiviert.",
+      loesungen: [[{ sollKeys: ["nfdl"], habenKeys: ["bestandsaenderung_nfdl"], betrag: 1250 }]] },
+    { id: "4-B2", label: "B2 · Fakturierung im Folgejahr", text: "Im neuen Jahr wird die Beratung dem Klienten in Rechnung gestellt (CHF 1'250). Erlösbuchung.",
+      loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["dienstleistungsertrag"], betrag: 1250 }]] },
+    { id: "4-B3", label: "B3 · Auflösung NFDL", text: "Gleichzeitig zur Fakturierung wird die NFDL-Position aufgelöst, weil die Leistung jetzt verrechnet ist.",
+      loesungen: [[{ sollKeys: ["bestandsaenderung_nfdl"], habenKeys: ["nfdl"], betrag: 1250 }]] },
+    { id: "4-B4", typ: "interpretation", label: "B4 · NFDL vs. Transitorische Aktive",
+      text: "Wodurch unterscheiden sich Nicht fakturierte Dienstleistungen (NFDL) von transitorischen Aktiven? Beide sind Aktivkonten, die am Jahresende gebildet werden – aber sie haben unterschiedliche Anlässe.",
+      musterloesung: [
+        "Transitorische Aktive: Klassische zeitliche Abgrenzung. Es geht um den Zeitpunkt der Erfassung (z.B. vorausbezahlte Versicherung, Marchzins). Der Vorgang ist abgeschlossen, nur der Zeitpunkt wird korrigiert.",
+        "NFDL: Operative Wertschöpfung. Es geht um eine bereits produzierte, aber noch nicht verrechnete Leistung (Work in Progress). Die Wertschöpfung hat stattgefunden, die Rechnung folgt.",
+        "Buchungstechnisch ähnlich: beide werden am Jahresende aktiviert und im Folgejahr aufgelöst.",
+        "Konzeptionell verschieden: Transitorische Aktive sind erfolgsneutral (Periodenverschiebung), NFDL erhöhen den Periodenertrag (Bestandsänderung als Ertragskonto).",
+        "Praxis: Treuhänder, Anwälte und Berater führen NFDL als Standard. Übliche Abkürzungen sind NFDL oder Nicht fakt. DL.",
+      ] },
+    { typ: "abschnitt", label: "Teil C · Konzeptuelles Verständnis", farbe: "#A85930" },
+    { id: "4-C1", typ: "multiplechoice", label: "C1 · Welches Konto fehlt?",
+      text: "Welches der folgenden Konten findet sich typischerweise NICHT in einem Dienstleistungsunternehmen?",
+      antworten: ["Warenbestand", "Personalaufwand", "Dienstleistungsertrag", "Raumaufwand"],
+      korrekt: 0,
+      loesung: "Warenbestand. Dienstleistungsbetriebe verkaufen keine physische Ware, sondern Leistungen. Daher gibt es kein Warenlager und auch kein Konto Warenbestand. Stattdessen dominiert der Personalaufwand und es gibt das Spezialkonto NFDL." },
+    { id: "4-C2", typ: "multiplechoice", label: "C2 · Dominanter Aufwand",
+      text: "Welcher Aufwand dominiert in einem typischen Dienstleistungsunternehmen?",
+      antworten: ["Materialaufwand", "Personalaufwand", "Warenaufwand", "Abschreibungen"],
+      korrekt: 1,
+      loesung: "Personalaufwand. In Dienstleistungsbetrieben wie Anwaltskanzleien, Beratungen oder IT-Dienstleistern sind die Mitarbeitenden das Hauptproduktionsmittel. Der Personalaufwand macht oft 60 bis 80 Prozent des Gesamtaufwands aus." },
+    { id: "4-C3", typ: "interpretation", label: "C3 · Vergleich mit Handelsbetrieb",
+      text: "Was sind die wichtigsten buchhalterischen Besonderheiten eines Dienstleistungsbetriebes im Vergleich zu einem Handelsbetrieb?",
+      musterloesung: [
+        "Kein Warenlager: Es gibt keine physischen Produkte zu lagern und somit kein Konto Warenbestand und kein Konto Warenaufwand.",
+        "Hauptertrag heisst Dienstleistungsertrag (statt Warenertrag), je nach Branche auch Honorarertrag oder Beratungsertrag.",
+        "Personalaufwand dominiert die Erfolgsrechnung (Mitarbeitende sind das Produktionsmittel), während im Handel der Warenaufwand der grösste Block ist.",
+        "Keine Lagerbewertungs-Frage: Die ganze Diskussion um FIFO, LIFO und Durchschnitt entfällt, weil es keine Vorräte gibt.",
+        "Stattdessen NFDL: Bereits erbrachte, noch nicht verrechnete Leistungen werden am Jahresende aktiviert (Pendant zum Warenbestand).",
+        "Bilanz: Das Umlaufvermögen besteht hauptsächlich aus Bank, Forderungen und NFDL, kaum aus Vorräten.",
+      ] },
+  ],
+};
+
+// Aufgabe 5: Konten im Produktionsunternehmen
+const aufgabe5 = {
+  title: "Aufgabe 5: Konten im Produktionsunternehmen",
+  subtitle: "Maschinenbau Müller AG · Drei Lagerstufen und Aktivierung",
+  tabLabel: "Aufgabe 5",
+  context: "Produktionsbetriebe führen drei Lagerstufen: Rohstoffe, Halbfabrikate und Fertigfabrikate. Eigenleistungen werden aktiviert (im Bestandskonto erfasst statt direkt als Aufwand).",
+  theorie: {
+    title: "Theorie: Buchhaltung im Produktionsunternehmen",
+    blocks: [
+      { type: "text", text: "Produktionsbetriebe stellen aus Rohstoffen Fertigprodukte her. Dazu gehören Maschinenbau, Lebensmittelindustrie, Pharma, Möbelhersteller und viele andere. Buchhalterisch sind sie komplexer als Handelsbetriebe, weil der Wertfluss durch mehrere Stufen geht – jede mit einem eigenen Bestandskonto." },
+      { type: "subtitle", text: "Drei Lagerstufen" },
+      { type: "list", items: [
+        "Rohstoffe (Lagerstufe 1): eingekaufte Materialien wie Stahl, Schrauben, Elektronik",
+        "Halbfabrikate (Lagerstufe 2): in Produktion befindliche oder teilfertige Produkte",
+        "Fertigfabrikate (Lagerstufe 3): verkaufsbereite, fertige Produkte",
+      ]},
+      { type: "subtitle", text: "Hauptkonten" },
+      { type: "list", items: [
+        "Aktiva: Rohstoffe, Halbfabrikate, Fertigfabrikate, Forderungen L+L, Bank",
+        "Ertrag: Produktionsertrag (auch Fabrikationsertrag genannt)",
+        "Aufwand: Materialaufwand (Rohstoffverbrauch), Personalaufwand (Produktionslöhne), Abschreibungen auf Maschinen",
+      ]},
+      { type: "subtitle", text: "Wertfluss durch die Produktion" },
+      { type: "text", text: "Material wird gekauft (geht auf Rohstoffe), in die Produktion eingebracht (wird zu Halbfabrikat) und nach Fertigstellung als Fertigfabrikat aktiviert. Erst beim Verkauf wird der Wert als Aufwand realisiert. Dieser mehrstufige Prozess macht die Bewertung von Halbfabrikaten besonders anspruchsvoll, weil sie Material- und Lohnanteile enthalten." },
+      { type: "beispiel", text: "Maschinenbau Müller AG kauft Stahl für CHF 50'000 (Rohstoffe / Verbindlichkeiten). Daraus produziert sie eine Maschine, die nach Fertigstellung als Fertigfabrikat ins Lager geht (Fertigfabrikate / Halbfabrikate CHF 30'000). Beim Verkauf wird der Erlös gebucht (Forderungen / Produktionsertrag CHF 80'000)." },
+      { type: "subtitle", text: "Aktivierung von Eigenleistungen" },
+      { type: "text", text: "Eine Besonderheit von Produktionsbetrieben: Lohnaufwand für Produktionsmitarbeitende und Materialverbrauch werden anteilig in die Bestandskonten umgebucht, statt direkt als Aufwand erfasst. Diese Werte erscheinen erst beim Verkauf in der Erfolgsrechnung. Das nennt man Aktivierung von Eigenleistungen." },
+      { type: "merksatz", text: "Im Handelsbetrieb gibt es ein Lager (Warenbestand), im Produktionsbetrieb drei (Rohstoffe, Halbfabrikate, Fertigfabrikate). Diese Mehrstufigkeit bildet den Produktionsprozess buchhalterisch ab und erlaubt eine differenzierte Bewertung der Werte in jeder Verarbeitungsstufe." },
+    ],
+  },
+  sachverhalt: {
+    title: "Sachverhalt: Maschinenbau Müller AG",
+    intro: "Die Maschinenbau-AG in Winterthur produziert Spezialmaschinen für die Lebensmittelindustrie und beschäftigt 35 Mitarbeitende. Drei Lagerstufen werden geführt. Materialaufwand und Personalaufwand sind die Hauptaufwandsblöcke.",
+    tabelle: {
+      cols: ["Lagerstufe / Konto", "Inhalt"],
+      rows: [
+        ["Rohstoffe (Lagerstufe 1)", "Eingekaufte Materialien wie Stahl, Schrauben, Elektronik"],
+        ["Halbfabrikate (Lagerstufe 2)", "In Produktion befindliche oder teilfertige Maschinen"],
+        ["Fertigfabrikate (Lagerstufe 3)", "Verkaufsbereite Maschinen"],
+        ["Hauptaufwand", "Materialaufwand, Personalaufwand"],
+        ["Hauptertrag", "Produktionsertrag"],
+      ],
+    },
+  },
+  faelle: [
+    { typ: "abschnitt", label: "Teil A · Typische Buchungen", farbe: "#7E22CE" },
+    { id: "5-A1", label: "A1 · Rohstoffeinkauf", text: "Wir kaufen Stahl und Komponenten als Rohstoffe für CHF 50'000 auf Rechnung.",
+      loesungen: [[{ sollKeys: ["rohstoffe"], habenKeys: ["verbindlichkeiten"], betrag: 50000 }]] },
+    { id: "5-A2", label: "A2 · Aktivierung Fertigfabrikat", text: "Eine Maschine wird fertiggestellt und vom Halbfabrikat-Lager ins Fertigfabrikat-Lager umgebucht. Wert: CHF 30'000.",
+      loesungen: [[{ sollKeys: ["fertigfabrikate"], habenKeys: ["halbfabrikate"], betrag: 30000 }]] },
+    { id: "5-A3", label: "A3 · Verkauf Fertigprodukt", text: "Wir verkaufen eine fertige Maschine für CHF 80'000 auf Rechnung an einen Kunden.",
+      loesungen: [[{ sollKeys: ["forderungen"], habenKeys: ["produktionsertrag", "warenertrag"], betrag: 80000 }]] },
+    { typ: "abschnitt", label: "Teil B · Konzeptuelles Verständnis", farbe: "#0F766E" },
+    { id: "5-B1", typ: "multiplechoice", label: "B1 · Lagerstufen",
+      text: "Wie viele Lagerstufen führt ein typischer Produktionsbetrieb?",
+      antworten: ["1 Lagerstufe (nur Fertigprodukte)", "2 Lagerstufen (Rohstoffe und Fertigprodukte)", "3 Lagerstufen (Rohstoffe, Halbfabrikate, Fertigfabrikate)", "4 Lagerstufen"],
+      korrekt: 2,
+      loesung: "Drei Lagerstufen: Rohstoffe (Eingangslager), Halbfabrikate (Produktion) und Fertigfabrikate (Ausgangslager). Diese Differenzierung erlaubt es, den Wertfluss durch die Produktion abzubilden." },
+    { id: "5-B2", typ: "multiplechoice", label: "B2 · Konto im Produktionsbetrieb",
+      text: "Welches Konto findet sich im Produktionsbetrieb, aber NICHT im Handelsbetrieb?",
+      antworten: ["Forderungen L+L", "Verbindlichkeiten L+L", "Halbfabrikate", "Bank"],
+      korrekt: 2,
+      loesung: "Halbfabrikate. Während Handelsbetriebe nur fertige Ware kaufen und weiterverkaufen, durchläuft die Ware in einem Produktionsbetrieb mehrere Stufen. Halbfabrikate (teilfertige Produkte) sind das Bindeglied zwischen Rohstoffen und Fertigfabrikaten und gibt es nur in Produktionsbetrieben." },
+    { id: "5-B3", typ: "interpretation", label: "B3 · Vergleich mit Handelsbetrieb",
+      text: "Wodurch unterscheidet sich die Kontenführung eines Produktionsbetriebes von einem Handelsbetrieb? Welche zusätzlichen Konten gibt es und warum?",
+      musterloesung: [
+        "Drei Lagerstufen statt einer: Rohstoffe, Halbfabrikate, Fertigfabrikate. Das bildet den Produktionsprozess von der Materialbeschaffung bis zum verkaufsbereiten Produkt ab.",
+        "Eigenleistungen werden aktiviert: Lohn- und Materialaufwand werden anteilig in die Bestandskonten umgebucht (Halbfabrikate / Personalaufwand). Diese Werte erscheinen in der Bilanz, nicht als Aufwand in der Erfolgsrechnung.",
+        "Materialaufwand statt Warenaufwand: Material wird verbraucht, nicht weiterverkauft. Daher anderer Begriff.",
+        "Produktionsertrag (oder Fabrikationsertrag) statt Warenertrag: zeigt, dass die Wertschöpfung im Unternehmen selbst stattfindet.",
+        "Komplexere Bewertung: Halbfabrikate müssen mit Material- und Lohnanteil bewertet werden, was eine ausgebaute Kostenrechnung voraussetzt.",
+      ] },
+  ],
+};
+
+const alleAufgaben = [aufgabe1, aufgabe2, aufgabe3, aufgabe4, aufgabe5];
+
+// ===== Komponenten =====
+const BookingRow = ({ entry, onChange, locked, status, diagnose }) => {
+  const baseColor = status === "correct" ? "border-emerald-500 bg-emerald-50" : status === "wrong" ? "border-rose-400 bg-rose-50" : "border-stone-300 bg-white";
+  const fieldColor = (ok) => status === "wrong" ? (ok ? "border-emerald-400" : "border-rose-400 bg-rose-100/50") : "border-stone-300";
+  return (
+    <div className={`grid grid-cols-12 gap-2 p-2 rounded-md border ${baseColor} transition-colors`}>
+      <input type="text" placeholder="Soll-Konto" className={`col-span-5 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.sollOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm`} value={entry.soll} onChange={(e) => onChange({ ...entry, soll: e.target.value })} disabled={locked} />
+      <input type="text" placeholder="Haben-Konto" className={`col-span-5 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.habenOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm`} value={entry.haben} onChange={(e) => onChange({ ...entry, haben: e.target.value })} disabled={locked} />
+      <input type="text" placeholder="Betrag" className={`col-span-2 px-3 py-2 bg-transparent border-b ${diagnose ? fieldColor(diagnose.betragOk) : "border-stone-300"} focus:border-[#1B6B63] text-sm text-right`} value={entry.betrag} onChange={(e) => onChange({ ...entry, betrag: e.target.value })} disabled={locked} />
+    </div>
+  );
+};
+
+const FallCard = ({ fall, state, setState }) => {
+  const anzahl = fall.anzahlBuchungen || 1;
+  const entries = state.entries || Array.from({ length: anzahl }, () => ({ soll: "", haben: "", betrag: "" }));
+  const [showSolution, setShowSolution] = useState(false);
+
+  const updateEntry = (i, ne) => {
+    const newEntries = [...entries]; newEntries[i] = ne;
+    setState({ ...state, entries: newEntries, checked: false, diagnosen: null });
+  };
+
+  const pruefen = () => {
+    if (fall.keineEingabe) {
+      setShowSolution(true);
+      setState({ ...state, checked: true, correct: true });
+      return;
+    }
+    if (fall.freitext) {
+      setShowSolution(true);
+      setState({ ...state, checked: true, correct: true });
+      return;
+    }
+    const isCorrect = (fall.loesungen || []).some((variante) => {
+      if (variante.length !== entries.length) return false;
+      const used = new Array(variante.length).fill(false);
+      return entries.every((entry) => {
+        for (let i = 0; i < variante.length; i++) {
+          if (!used[i] && checkEntry(entry, [variante[i]])) { used[i] = true; return true; }
+        }
+        return false;
+      });
+    });
+    const diagnosen = entries.map((entry) => diagnoseEntry(entry, (fall.loesungen || []).flat()));
+    setState({ ...state, checked: true, correct: isCorrect, diagnosen });
+  };
+
+  const reset = () => {
+    setState({ entries: Array.from({ length: anzahl }, () => ({ soll: "", haben: "", betrag: "" })), checked: false, correct: false, diagnosen: null });
+    setShowSolution(false);
+  };
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      {state.checked && state.correct && (fall.freitext || fall.keineEingabe) && (
+        <p className="text-xs text-emerald-700 mt-2 italic">Aufgabe abgeschlossen. Lösungsweg unten.</p>
+      )}
+      {!fall.keineEingabe && (
+        <div className="space-y-2 mt-4">
+          {entries.map((e, i) => (
+            <BookingRow key={i} entry={e} onChange={(ne) => updateEntry(i, ne)} locked={state.checked && state.correct} status={state.checked ? (state.correct ? "correct" : "wrong") : null} diagnose={state.checked && !state.correct && state.diagnosen ? state.diagnosen[i] : null} />
+          ))}
+        </div>
+      )}
+      {state.checked && !state.correct && state.diagnosen && (
+        <p className="text-xs text-rose-700 mt-2 italic">Rot markierte Felder sind falsch. Grün markierte sind korrekt.</p>
+      )}
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors">{fall.keineEingabe ? "Lösung anzeigen" : "Prüfen"}</button>}
+        {((state.checked && !state.correct) || showSolution) && !fall.keineEingabe && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Lösung verbergen" : "Lösung zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Musterlösung</p>
+          {(fall.freitext || fall.keineEingabe) ? (
+            <p className="text-sm text-stone-700">{fall.loesung}</p>
+          ) : (
+            <div className="space-y-1">
+              {(fall.loesungen || [[]])[0].map((b, i) => (
+                <div key={i} className="text-sm text-stone-700 font-mono">
+                  <span className="font-semibold">{displayNames[b.sollKeys[0]] || b.sollKeys[0]}</span>
+                  <span className="mx-2 text-stone-400">/</span>
+                  <span className="font-semibold">{displayNames[b.habenKeys[0]] || b.habenKeys[0]}</span>
+                  <span className="ml-4 text-[#1B6B63]">CHF {b.betrag.toLocaleString("de-CH")}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const KennzahlCard = ({ fall, state, setState }) => {
+  const wert = state.wert || "";
+  const [showSolution, setShowSolution] = useState(false);
+  const update = (v) => setState({ ...state, wert: v, checked: false });
+  const pruefen = () => {
+    const num = parseFloat(normalizeNumber(wert).replace(",", "."));
+    const ok = !isNaN(num) && Math.abs(num - fall.erwartet) <= fall.toleranz;
+    setState({ ...state, checked: true, correct: ok });
+  };
+  const reset = () => { setState({ wert: "", checked: false, correct: false }); setShowSolution(false); };
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-3 mt-4 max-w-sm">
+        <input type="text" inputMode="decimal" placeholder="Wert eingeben"
+          className={`flex-1 px-3 py-2 bg-white border-2 ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-300"} rounded-md focus:border-[#1B6B63] text-base text-right font-mono`}
+          value={wert} onChange={(e) => update(e.target.value)} disabled={state.checked && state.correct} />
+        <span className="text-stone-600 font-medium text-sm">{fall.einheit}</span>
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors">Prüfen</button>}
+        {((state.checked && !state.correct) || showSolution) && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Lösungsweg verbergen" : "Lösungsweg zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Lösungsweg</p>
+          <p className="text-sm text-stone-700">{fall.loesung}</p>
+          <p className="text-sm text-[#1B6B63] font-bold mt-2">Resultat: {fall.erwartet.toLocaleString("de-CH")} {fall.einheit}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MultipleChoiceCard = ({ fall, state, setState }) => {
+  const selected = state.selected;
+  const [showSolution, setShowSolution] = useState(false);
+  const select = (i) => {
+    if (state.checked && state.correct) return;
+    setState({ ...state, selected: i, checked: false });
+  };
+  const pruefen = () => {
+    if (selected === undefined || selected === null) return;
+    setState({ ...state, checked: true, correct: selected === fall.korrekt });
+  };
+  const reset = () => { setState({ selected: null, checked: false, correct: false }); setShowSolution(false); };
+
+  return (
+    <div className={`bg-white rounded-lg border ${state.checked ? (state.correct ? "border-emerald-400" : "border-rose-400") : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.checked && (
+          <div className={`ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${state.correct ? "bg-emerald-500" : "bg-rose-500"}`}>
+            {state.correct ? <CheckIcon className="w-5 h-5 text-white" /> : <XIcon className="w-5 h-5 text-white" />}
+          </div>
+        )}
+      </div>
+      <div className="space-y-2 mt-4">
+        {fall.antworten.map((ant, i) => {
+          let cls = "border-stone-300 bg-white hover:border-[#1B6B63] hover:bg-stone-50";
+          if (state.checked) {
+            if (i === fall.korrekt) cls = "border-emerald-500 bg-emerald-50";
+            else if (i === selected) cls = "border-rose-400 bg-rose-50";
+            else cls = "border-stone-200 bg-white opacity-60";
+          } else if (i === selected) {
+            cls = "border-[#1B6B63] bg-[#1B6B63]/10";
+          }
+          return (
+            <button key={i} type="button" onClick={() => select(i)} disabled={state.checked && state.correct}
+              className={`w-full text-left px-4 py-3 rounded-md border-2 ${cls} transition-colors flex items-center gap-3`}>
+              <span className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
+                state.checked && i === fall.korrekt ? "border-emerald-500 bg-emerald-500 text-white" :
+                state.checked && i === selected ? "border-rose-400 bg-rose-400 text-white" :
+                i === selected ? "border-[#1B6B63] bg-[#1B6B63] text-white" : "border-stone-400 text-stone-500"
+              }`}>{String.fromCharCode(65 + i)}</span>
+              <span className="text-sm text-stone-800">{ant}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!state.correct && <button onClick={pruefen} disabled={selected === undefined || selected === null} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Prüfen</button>}
+        {((state.checked && !state.correct) || showSolution) && (
+          <button onClick={() => setShowSolution(!showSolution)} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2">
+            {showSolution ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}{showSolution ? "Erklärung verbergen" : "Erklärung zeigen"}
+          </button>
+        )}
+        {state.checked && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Zurücksetzen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Erklärung</p>
+          <p className="text-sm text-stone-700">{fall.loesung}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const InterpretationCard = ({ fall, state, setState }) => {
+  const [showSolution, setShowSolution] = useState(state?.correct || false);
+  const aufdecken = () => { setShowSolution(true); setState({ ...state, correct: true }); };
+  const reset = () => { setShowSolution(false); setState({ correct: false }); };
+  return (
+    <div className={`bg-white rounded-lg border ${state.correct ? "border-emerald-400" : "border-stone-200"} shadow-sm p-5 mb-4 transition-all`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1">
+          <span className="text-xs font-semibold tracking-widest text-[#1B6B63] uppercase">{fall.label}</span>
+          <p className="text-stone-800 text-sm leading-relaxed mt-1">{fall.text}</p>
+        </div>
+        {state.correct && (
+          <div className="ml-4 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-emerald-500">
+            <CheckIcon className="w-5 h-5 text-white" />
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-stone-500 italic mt-2">Tipp: Notiere deine Antwort selbst. Decke danach die Musterlösung auf, um zu vergleichen.</p>
+      <div className="flex flex-wrap gap-2 mt-4 no-print">
+        {!showSolution && <button onClick={aufdecken} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Musterlösung aufdecken</button>}
+        {showSolution && <button onClick={reset} className="px-4 py-2 bg-stone-100 text-stone-700 text-sm font-medium rounded-md hover:bg-stone-200 transition-colors flex items-center gap-2"><RotateCcwIcon className="w-4 h-4" />Verbergen</button>}
+      </div>
+      {showSolution && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+          <p className="text-xs font-semibold text-amber-900 uppercase tracking-widest mb-2">Musterlösung</p>
+          <ul className="space-y-2">
+            {fall.musterloesung.map((m, i) => (
+              <li key={i} className="text-sm text-stone-700 flex gap-2">
+                <span className="text-[#1B6B63] font-bold flex-shrink-0">•</span><span>{m}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AbschnittsTrenner = ({ fall }) => (
+  <div className="my-6">
+    <div className="flex items-center gap-3">
+      <div className="flex-1 h-px" style={{ backgroundColor: (fall.farbe || "#1B6B63") + "55" }}></div>
+      <span className="font-serif text-lg font-semibold whitespace-nowrap" style={{ color: fall.farbe || "#1B6B63" }}>{fall.label}</span>
+      <div className="flex-1 h-px" style={{ backgroundColor: (fall.farbe || "#1B6B63") + "55" }}></div>
+    </div>
+    {fall.intro && (
+      <p className="text-sm text-stone-700 italic mt-3 mb-3 bg-stone-50 border-l-4 px-4 py-3 rounded" style={{ borderLeftColor: fall.farbe || "#1B6B63" }}>{fall.intro}</p>
+    )}
+  </div>
+);
+
+const RenderCard = ({ fall, state, setState }) => {
+  if (fall.typ === "abschnitt") return <AbschnittsTrenner fall={fall} />;
+  if (fall.typ === "kennzahl") return <KennzahlCard fall={fall} state={state} setState={setState} />;
+  if (fall.typ === "multiplechoice") return <MultipleChoiceCard fall={fall} state={state} setState={setState} />;
+  if (fall.typ === "interpretation") return <InterpretationCard fall={fall} state={state} setState={setState} />;
+  return <FallCard fall={fall} state={state} setState={setState} />;
+};
+
+const TheorieBlock = ({ block }) => {
+  if (block.type === "text") return <p className="text-sm text-stone-700 leading-relaxed">{block.text}</p>;
+  if (block.type === "subtitle") return <h4 className="font-serif text-base font-semibold text-stone-800 mt-2">{block.text}</h4>;
+  if (block.type === "list") return (
+    <ul className="space-y-1.5 ml-1">
+      {block.items.map((item, i) => (
+        <li key={i} className="text-sm text-stone-700 flex gap-2"><span className="text-[#A85930] font-bold flex-shrink-0">•</span><span>{item}</span></li>
+      ))}
+    </ul>
+  );
+  if (block.type === "merksatz") return (
+    <div className="bg-amber-50 border-l-4 border-[#F9E47A] rounded-md p-3 mt-1">
+      <p className="text-sm text-stone-700"><strong className="text-[#A85930]">Merksatz:</strong> {block.text}</p>
+    </div>
+  );
+  if (block.type === "beispiel") return (
+    <div className="bg-stone-50 border-l-4 border-stone-300 rounded-md p-3 mt-1">
+      <p className="text-xs font-semibold text-stone-600 uppercase tracking-wider mb-1">Beispiel</p>
+      <p className="text-sm text-stone-700">{block.text}</p>
+    </div>
+  );
+  if (block.type === "vergleich") return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1">
+      <div className="bg-green-50 border border-green-200 rounded-md p-3">
+        <p className="text-xs font-semibold text-green-900 uppercase tracking-wider mb-1">{block.left.title}</p>
+        <p className="text-sm text-stone-700">{block.left.text}</p>
+      </div>
+      <div className="bg-rose-50 border border-rose-200 rounded-md p-3">
+        <p className="text-xs font-semibold text-rose-900 uppercase tracking-wider mb-1">{block.right.title}</p>
+        <p className="text-sm text-stone-700">{block.right.text}</p>
+      </div>
+    </div>
+  );
+  if (block.type === "formel") return (
+    <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mt-1 font-mono text-sm text-blue-900">
+      {block.text}
+    </div>
+  );
+  return null;
+};
+
+const TheorieBox = ({ daten }) => {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="bg-white border-2 border-[#A85930]/20 rounded-lg shadow-sm mb-6 overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 bg-[#A85930]/5 hover:bg-[#A85930]/10 transition-colors no-print">
+        <span className="font-serif text-base font-semibold text-stone-800 flex items-center gap-2">
+          <BookOpenIcon className="w-5 h-5 text-[#A85930]" />
+          {daten.title}
+        </span>
+        <span className="text-xs text-stone-500 flex items-center gap-1">
+          {open ? <EyeOffIcon className="w-4 h-4" /> : <EyeIcon className="w-4 h-4" />}
+          {open ? "Verbergen" : "Anzeigen"}
+        </span>
+      </button>
+      {open && (
+        <div className="p-5 space-y-3">
+          {daten.blocks.map((block, i) => <TheorieBlock key={i} block={block} />)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SachverhaltBox = ({ daten }) => {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="bg-white border border-stone-200 rounded-lg shadow-sm mb-6 overflow-hidden">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 bg-stone-50 hover:bg-stone-100 transition-colors no-print">
+        <span className="font-serif text-base font-semibold text-stone-800 flex items-center gap-2"><InfoIcon className="w-4 h-4 text-[#1B6B63]" />{daten.title}</span>
+        <span className="text-stone-500 text-xs">{open ? "Verbergen" : "Anzeigen"}</span>
+      </button>
+      {open && (
+        <div className="p-5">
+          <p className="text-sm text-stone-700 mb-4 leading-relaxed">{daten.intro}</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-stone-50 text-xs uppercase tracking-wider text-stone-600">
+                <tr>{daten.tabelle.cols.map((c, i) => <th key={i} className={`px-3 py-2 ${i === 0 || (i === 1 && daten.tabelle.cols.length > 2) ? "text-left" : "text-right"}`}>{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                {daten.tabelle.rows.map((r, i) => {
+                  const isTotal = r[0] === "Total verfügbar" || r[0] === "31.12." || r[0] === "Bestandsveränderung";
+                  const isVerkauf = r[1] === "Verkauf im Jahr";
+                  return (
+                    <tr key={i} className={`border-t border-stone-100 ${isTotal ? "font-bold bg-stone-50" : ""} ${isVerkauf ? "bg-amber-50 italic" : ""}`}>
+                      {r.map((c, j) => <td key={j} className={`px-3 py-2 ${j === 0 || (j === 1 && r.length > 2) ? "text-stone-700" : "text-right font-mono text-stone-800"}`}>{c}</td>)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const VergleichsAnzeige = ({ daten }) => {
+  const [sichtbar, setSichtbar] = useState(false);
+  const colCount = daten.cols.length;
+  if (!sichtbar) {
+    return (
+      <div className="bg-stone-50 rounded-lg p-6 border border-stone-200 mb-4 mt-8">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+            <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+          </div>
+          <button onClick={() => setSichtbar(true)} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Vergleich einblenden</button>
+        </div>
+      </div>
+    );
+  }
+  const colColors = ["bg-stone-100", "bg-blue-50", "bg-green-50", "bg-amber-50"];
+  const colTextColors = ["text-stone-600", "text-blue-900", "text-green-900", "text-amber-900"];
+  return (
+    <div className="bg-white rounded-lg border border-stone-200 p-6 mb-4 mt-8">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+          <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+        </div>
+        <button onClick={() => setSichtbar(false)} className="text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1 no-print"><EyeOffIcon className="w-4 h-4" />Verbergen</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr>
+              {daten.cols.map((c, i) => (
+                <th key={i} className={`${colColors[i] || colColors[0]} px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider ${colTextColors[i] || colTextColors[0]} border border-stone-200`}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {daten.rows.map((row, i) => (
+              <tr key={i}>
+                {row.map((cell, j) => (
+                  <td key={j} className={`px-3 py-2 ${j === 0 ? "font-semibold text-stone-700 bg-stone-50" : "text-stone-700"} ${j === colCount - 1 && colCount === 4 ? "font-mono font-semibold" : j > 0 ? "font-mono" : ""} border border-stone-200`}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {daten.merksatz && (
+        <div className="mt-4 p-3 bg-amber-50 border-l-4 border-[#F9E47A] rounded-md text-xs text-stone-700">
+          <strong>Merksatz:</strong> {daten.merksatz}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const VerfahrensTabelle = ({ daten }) => {
+  const [sichtbar, setSichtbar] = useState(false);
+  const farbenMap = {
+    blue: { bg: "bg-blue-50", text: "text-blue-900" },
+    rose: { bg: "bg-rose-50", text: "text-rose-900" },
+    green: { bg: "bg-green-50", text: "text-green-900" },
+    amber: { bg: "bg-amber-50", text: "text-amber-900" },
+  };
+  if (!sichtbar) {
+    return (
+      <div className="bg-stone-50 rounded-lg p-6 border border-stone-200 mb-4 mt-8">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+            <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+          </div>
+          <button onClick={() => setSichtbar(true)} className="px-4 py-2 bg-[#1B6B63] text-white text-sm font-medium rounded-md hover:bg-[#154f49] transition-colors flex items-center gap-2"><EyeIcon className="w-4 h-4" />Übersicht einblenden</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-lg border border-stone-200 p-6 mb-4 mt-8">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <h3 className="font-serif text-lg text-stone-800">{daten.title}</h3>
+          <p className="text-sm text-stone-600 mt-1">{daten.subtitle}</p>
+        </div>
+        <button onClick={() => setSichtbar(false)} className="text-sm text-stone-500 hover:text-stone-700 flex items-center gap-1 no-print"><EyeOffIcon className="w-4 h-4" />Verbergen</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr>
+              {daten.cols.map((c, i) => (
+                <th key={i} className="bg-stone-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-stone-600 border border-stone-200">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {daten.rows.map((row, i) => {
+              const farb = farbenMap[row.farbe] || farbenMap.blue;
+              return (
+                <tr key={i}>
+                  <td className={`px-3 py-3 border border-stone-200 ${farb.bg}`}>
+                    <div className={`font-bold ${farb.text}`}>{row.verfahren}</div>
+                    <div className="text-xs text-stone-600 italic mt-0.5">{row.verfahrenSub}</div>
+                  </td>
+                  <td className="px-3 py-3 text-stone-700 border border-stone-200 text-xs leading-relaxed">{row.anwendung}</td>
+                  <td className="px-3 py-3 text-stone-700 border border-stone-200 text-xs leading-relaxed">{row.bewertung}</td>
+                  <td className="px-3 py-3 text-stone-700 border border-stone-200 text-xs leading-relaxed">{row.beurteilung}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 p-3 bg-amber-50 border-l-4 border-[#F9E47A] rounded-md text-xs text-stone-700">
+        <strong>Praxis Schweiz:</strong> Am häufigsten anzutreffen sind FIFO und Gewichteter Durchschnittspreis. LIFO kommt kaum noch vor und ist unter Swiss GAAP FER und IFRS verpönt. Verrechnungspreise finden sich vor allem in Produktionsbetrieben mit ausgebauter Kostenrechnung.
+      </div>
+    </div>
+  );
+};
+
+// ===== App =====
+function App() {
+  const [activeTab, setActiveTab] = useState(0);
+  const [states, setStates] = useState({});
+  const setFallState = (id, ns) => setStates((s) => ({ ...s, [id]: ns }));
+  const getFallState = (id) => states[id] || { entries: null, checked: false, correct: false };
+
+  const stats = useMemo(() => {
+    let total = 0, correct = 0;
+    alleAufgaben.forEach((a) => a.faelle.forEach((f) => {
+      if (!istZaehlbar(f)) return;
+      total++;
+      if (states[f.id]?.correct) correct++;
+    }));
+    return { total, correct, prozent: total > 0 ? Math.round((correct / total) * 100) : 0 };
+  }, [states]);
+
+  const aktuelleAufgabe = alleAufgaben[activeTab];
+
+  return (
+    <div className="min-h-screen bg-stone-50">
+      <div className="bg-[#1B6B63] text-white">
+        <div className="max-w-5xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <p className="text-xs tracking-widest uppercase text-[#F9E47A] mb-1">Finanzielles Rechnungswesen I · HFW</p>
+              <h1 className="font-serif text-3xl md:text-4xl font-bold">Block 3 · Übungsplattform</h1>
+              <p className="text-sm text-stone-200 mt-2">Warenhandel: Methoden, Lagerbewertung und Verfahren</p>
+            </div>
+            <div className="flex items-center gap-3 bg-white/10 rounded-lg px-5 py-3">
+              <AwardIcon className="w-6 h-6 text-[#F9E47A]" />
+              <div>
+                <p className="text-xs text-stone-200">Fortschritt</p>
+                <p className="font-mono text-lg font-bold">{stats.correct} / {stats.total} <span className="text-[#F9E47A]">({stats.prozent}%)</span></p>
+              </div>
+            </div>
+          </div>
+          <div className="w-full bg-white/10 rounded-full h-2 mt-4 overflow-hidden">
+            <div className="bg-[#F9E47A] h-2 rounded-full transition-all duration-500" style={{ width: `${stats.prozent}%` }} />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border-b border-stone-200 sticky top-0 z-10 no-print">
+        <div className="max-w-5xl mx-auto px-6">
+          <div className="flex overflow-x-auto">
+            {alleAufgaben.map((a, i) => {
+              const gesamt = a.faelle.filter(istZaehlbar).length;
+              const geloest = a.faelle.filter((f) => istZaehlbar(f) && states[f.id]?.correct).length;
+              return (
+                <button key={i} onClick={() => setActiveTab(i)} className={`px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === i ? "border-[#1B6B63] text-[#1B6B63]" : "border-transparent text-stone-500 hover:text-stone-800"}`}>
+                  <span className="block text-xs tracking-widest uppercase">{a.tabLabel}</span>
+                  <span className="block mt-1">{geloest}/{gesamt}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="mb-6">
+          <h2 className="font-serif text-2xl text-stone-800">{aktuelleAufgabe.title}</h2>
+          <p className="text-stone-600 text-sm mt-1">{aktuelleAufgabe.subtitle}</p>
+          {aktuelleAufgabe.context && <p className="text-stone-700 text-sm mt-3 leading-relaxed bg-stone-50 border-l-4 border-stone-300 px-4 py-3 rounded">{aktuelleAufgabe.context}</p>}
+        </div>
+
+        {aktuelleAufgabe.theorie && <TheorieBox daten={aktuelleAufgabe.theorie} />}
+
+        {aktuelleAufgabe.sachverhalt && <SachverhaltBox daten={aktuelleAufgabe.sachverhalt} />}
+
+        <div className="bg-amber-50 border-l-4 border-[#F9E47A] rounded-md p-4 mb-6">
+          <div className="flex gap-3">
+            <BookOpenIcon className="w-5 h-5 text-[#1B6B63] flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-stone-700">
+              <p className="font-semibold mb-1">So funktioniert es</p>
+              <p>Buchungen: Soll, Haben und Betrag eingeben (Schreibweisen wie «Warenbestand», «Warenlager» werden akzeptiert). Kennzahlen: Wert eintippen, Toleranz wird berücksichtigt. Multiple Choice: eine Antwort wählen und prüfen. Reflexion: Antwort selbst notieren, dann Musterlösung aufdecken.</p>
+            </div>
+          </div>
+        </div>
+
+        {aktuelleAufgabe.faelle.map((fall, idx) => (
+          <RenderCard key={fall.id || `abschnitt-${idx}`} fall={fall} state={getFallState(fall.id)} setState={(ns) => setFallState(fall.id, ns)} />
+        ))}
+
+        {aktuelleAufgabe.vergleich && <VergleichsAnzeige daten={aktuelleAufgabe.vergleich} />}
+        {aktuelleAufgabe.verfahrensTabelle && <VerfahrensTabelle daten={aktuelleAufgabe.verfahrensTabelle} />}
+
+        <div className="flex justify-between mt-8 pt-6 border-t border-stone-200 no-print">
+          <button onClick={() => setActiveTab(Math.max(0, activeTab - 1))} disabled={activeTab === 0} className="px-4 py-2 text-sm font-medium text-stone-700 hover:text-[#1B6B63] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"><ChevronLeftIcon className="w-4 h-4" />Vorherige Aufgabe</button>
+          <button onClick={() => setActiveTab(Math.min(alleAufgaben.length - 1, activeTab + 1))} disabled={activeTab === alleAufgaben.length - 1} className="px-4 py-2 text-sm font-medium text-stone-700 hover:text-[#1B6B63] disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2">Nächste Aufgabe<ChevronRightIcon className="w-4 h-4" /></button>
+        </div>
+      </div>
+
+      <div className="bg-stone-100 border-t border-stone-200 py-6 mt-12">
+        <div className="max-w-5xl mx-auto px-6 text-center">
+          <p className="text-xs text-stone-500">finanzunterricht.ch · Davide Bianchini · Bildungszentrum für Wirtschaft Weinfelden</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
