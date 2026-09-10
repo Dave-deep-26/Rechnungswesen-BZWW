@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo · Zugang und Fortschritt</title>
+<style>
+  body{margin:0;font-family:Inter,system-ui,sans-serif;background:#F4EFEA;color:#1F2937}
+  header{background:#14213D;color:#F4EFEA;padding:14px 24px;display:flex;gap:14px;align-items:center}
+  header b{flex:1}header button{background:transparent;color:inherit;border:1px solid rgba(244,239,234,.35);border-radius:8px;padding:6px 12px;cursor:pointer}
+  main{max-width:640px;margin:32px auto;padding:0 16px}
+  .karte{background:#fff;border:1px solid #E5E1DB;border-radius:14px;padding:20px;margin-bottom:16px}
+  .knopf{background:#C2185B;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer}
+  .tag{font-size:12px;padding:2px 8px;border-radius:999px;background:#DCFCE7;color:#166534}.tag.aus{background:#FEE2E2;color:#991B1B}
+  pre{background:#F9F7F4;padding:10px;border-radius:8px;font-size:12px;overflow:auto}
+</style>
+</head>
+<body>
+<header><b>Demo Plattform</b><span id="netz" class="tag">online</span><span id="wer"></span><button id="abmelden">Abmelden</button></header>
+<main>
+  <div class="karte">
+    <h2>Übung 1 · Zähler</h2>
+    <p>Jeder Klick wird lokal gespeichert und an den Server gesendet, sobald du online bist. Öffne dieselbe Seite in einem zweiten Browser mit demselben Konto: der Stand ist dort.</p>
+    <p style="font-size:40px;margin:8px 0" id="zaehler">0</p>
+    <button class="knopf" id="plus">+1</button>
+    <button class="knopf" id="reset" style="background:#6B7280">Zurücksetzen</button>
+  </div>
+  <div class="karte">
+    <h2>Status</h2>
+    <pre id="status"></pre>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="zugang.js"></script>
+<script>
+(async function () {
+  var status = await Zugang.zugangPruefen();
+  document.getElementById('wer').textContent = status.email + ' (' + status.rolle + ')';
+  document.getElementById('status').textContent = JSON.stringify(status, null, 2);
+
+  var stand = await Zugang.fortschrittLaden('demo-zaehler', { wert: 0 });
+  var zeigen = function () { document.getElementById('zaehler').textContent = stand.wert; };
+  zeigen();
+
+  document.getElementById('plus').onclick = function () { stand.wert++; zeigen(); Zugang.fortschrittSpeichern('demo-zaehler', stand); };
+  document.getElementById('reset').onclick = function () { stand.wert = 0; zeigen(); Zugang.fortschrittSpeichern('demo-zaehler', stand); };
+  document.getElementById('abmelden').onclick = function () { Zugang.abmelden().then(function () { location.reload(); }); };
+
+  var netz = function () { var e = document.getElementById('netz'); e.textContent = navigator.onLine ? 'online' : 'offline'; e.className = 'tag' + (navigator.onLine ? '' : ' aus'); };
+  window.addEventListener('online', netz); window.addEventListener('offline', netz); netz();
+})();
+</script>
+</body>
+</html>

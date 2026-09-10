@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="de-CH">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lizenzen · Finanzbuchhaltung Plattform</title>
+<meta name="robots" content="noindex">
+<style>
+  :root{--navy:#14213D;--navy2:#1B2B45;--creme:#F4EFEA;--rosa:#F3D4DC;--magenta:#C2185B;--magenta2:#A9144F;--grau:#6B7280;--linie:#E5E1DB}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--creme);color:#1F2937;font-size:15px}
+  header{background:var(--navy);color:var(--creme);padding:14px 24px;display:flex;align-items:center;gap:14px}
+  header svg{width:36px;height:36px}
+  header h1{font-size:17px;margin:0;font-weight:700}
+  header .wer{margin-left:auto;font-size:13px;opacity:.75}
+  header button{background:transparent;color:var(--creme);border:1px solid rgba(244,239,234,.35);border-radius:8px;padding:6px 12px;cursor:pointer;font:inherit;font-size:13px}
+  main{max-width:1100px;margin:0 auto;padding:24px 16px 80px}
+  nav.tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+  nav.tabs button{background:#fff;border:1px solid var(--linie);border-radius:999px;padding:8px 16px;cursor:pointer;font:inherit;font-weight:600;color:#374151}
+  nav.tabs button.aktiv{background:var(--navy);color:#fff;border-color:var(--navy)}
+  section.tab[hidden]{display:none}
+  .karte{background:#fff;border:1px solid var(--linie);border-radius:14px;padding:20px;margin-bottom:18px}
+  .karte h2{margin:0 0 14px;font-size:16px}
+  .zeile{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
+  label.f{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--grau);flex:1;min-width:150px}
+  label.f input,label.f select{font:inherit;font-size:15px;text-transform:none;letter-spacing:0;padding:10px 12px;border:1px solid var(--linie);border-radius:10px;background:#fff;color:#111}
+  label.f input:focus{outline:none;border-color:var(--magenta);box-shadow:0 0 0 3px rgba(194,24,91,.18)}
+  .knopf{background:var(--magenta);color:#fff;border:0;border-radius:10px;padding:11px 18px;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}
+  .knopf:hover{background:var(--magenta2)}.knopf:disabled{opacity:.6;cursor:wait}
+  .knopf.leise{background:#fff;color:var(--navy);border:1px solid var(--linie)}
+  .knopf.klein{padding:6px 10px;font-size:13px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--linie);vertical-align:middle}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--grau);font-weight:600}
+  tr.klick{cursor:pointer}tr.klick:hover{background:#FAF7F3}
+  .tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600}
+  .tag.gruen{background:#DCFCE7;color:#166534}.tag.rot{background:#FEE2E2;color:#991B1B}.tag.grau{background:#F3F4F6;color:#4B5563}.tag.gelb{background:#FEF3C7;color:#92400E}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em}
+  textarea{width:100%;min-height:180px;font-family:ui-monospace,Menlo,monospace;font-size:13px;padding:10px;border:1px solid var(--linie);border-radius:10px}
+  .meldung{padding:10px 12px;border-radius:10px;margin:10px 0;font-size:14px}
+  .meldung.fehler{background:#FEE2E2;color:#991B1B}.meldung.ok{background:#DCFCE7;color:#166534}
+  .kennzahlen{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px}
+  .kz{background:var(--navy);color:var(--creme);border-radius:14px;padding:16px}
+  .kz b{display:block;font-size:28px;line-height:1;margin-bottom:6px}.kz span{font-size:12px;opacity:.7;text-transform:uppercase;letter-spacing:.04em}
+  .kz.akzent b{color:#FF5C9A}
+  .sperre{display:none;position:fixed;inset:0;background:var(--navy);color:var(--creme);align-items:center;justify-content:center;text-align:center;padding:24px;z-index:9999}
+  .rechts{text-align:right}
+  @media (max-width:640px){.tabelle{overflow-x:auto}th,td{padding:8px 6px}}
+</style>
+</head>
+<body>
+<header>
+  <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#14213D"/><rect x="18" y="20" width="64" height="9" rx="1.5" fill="#F4EFEA"/><rect x="45.5" y="20" width="9" height="60" rx="1.5" fill="#F4EFEA"/><rect x="21" y="42" width="17" height="6" rx="1" fill="#F3D4DC"/><rect x="21" y="54" width="13" height="6" rx="1" fill="#F3D4DC"/><rect x="58" y="42" width="23" height="6" rx="1" fill="#C2185B"/></svg>
+  <h1>Lizenzverwaltung</h1>
+  <span class="wer" id="wer"></span>
+  <button id="abmelden">Abmelden</button>
+</header>
+
+<div class="sperre" id="sperre"><div><h2>Kein Adminzugang</h2><p>Dieses Konto hat nicht die Rolle Admin.<br>Im Supabase SQL Editor einmalig setzen:</p><p class="mono">update public.profil set rolle = 'admin' where email = '…';</p><button class="knopf" onclick="Zugang.abmelden().then(()=>location.reload())">Abmelden</button></div></div>
+
+<main>
+  <div class="kennzahlen" id="kennzahlen"></div>
+
+  <nav class="tabs">
+    <button data-tab="lizenzen" class="aktiv">Lizenzen</button>
+    <button data-tab="codes">Codes</button>
+    <button data-tab="benutzer">Benutzer</button>
+  </nav>
+
+  <section class="tab" id="tab-lizenzen">
+    <div class="karte">
+      <h2>Codes erzeugen</h2>
+      <form id="form-erzeugen" class="zeile">
+        <label class="f">Bezeichnung<input name="bezeichnung" required placeholder="KVOST-2026-01" list="lizenz-namen"></label>
+        <datalist id="lizenz-namen"></datalist>
+        <label class="f">Kunde<input name="kunde" placeholder="KV Ostschweiz"></label>
+        <label class="f">Gültig bis<input name="gueltig_bis" type="date"></label>
+        <label class="f" style="flex:0 0 110px">Anzahl<input name="anzahl" type="number" min="1" max="5000" value="30" required></label>
+        <button class="knopf" type="submit">Erzeugen</button>
+      </form>
+      <div id="erzeugen-meldung"></div>
+      <div id="erzeugen-ergebnis" hidden>
+        <p style="margin:14px 0 8px;font-weight:600">Neue Codes <span id="erzeugen-anzahl"></span></p>
+        <textarea id="erzeugen-codes" readonly></textarea>
+        <div class="zeile" style="margin-top:8px">
+          <button class="knopf leise" id="erzeugen-csv">CSV herunterladen</button>
+          <button class="knopf leise" id="erzeugen-kopieren">Kopieren</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="karte">
+      <h2>Alle Lizenzen</h2>
+      <div class="tabelle"><table>
+        <thead><tr><th>Bezeichnung</th><th>Kunde</th><th>Gültig bis</th><th class="rechts">Codes</th><th class="rechts">Eingelöst</th><th>Status</th><th></th></tr></thead>
+        <tbody id="lizenz-liste"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-codes" hidden>
+    <div class="karte">
+      <div class="zeile" style="margin-bottom:12px">
+        <label class="f">Lizenz<select id="codes-lizenz"></select></label>
+        <label class="f">Filter<select id="codes-filter"><option value="">Alle</option><option value="frei">Frei</option><option value="eingeloest">Eingelöst</option><option value="gesperrt">Gesperrt</option></select></label>
+        <label class="f">Suche<input id="codes-suche" placeholder="Code oder E-Mail"></label>
+        <button class="knopf leise" id="codes-csv">CSV herunterladen</button>
+      </div>
+      <div id="codes-meldung"></div>
+      <div class="tabelle"><table>
+        <thead><tr><th>Code</th><th>Status</th><th>Benutzer</th><th>Eingelöst am</th><th></th></tr></thead>
+        <tbody id="codes-liste"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-benutzer" hidden>
+    <div class="karte">
+      <div class="zeile" style="margin-bottom:12px">
+        <label class="f">Suche<input id="benutzer-suche" placeholder="E-Mail"></label>
+      </div>
+      <div id="benutzer-meldung"></div>
+      <div class="tabelle"><table>
+        <thead><tr><th>E-Mail</th><th>Rolle</th><th>Lizenz</th><th>Registriert</th><th class="rechts">Übungen</th></tr></thead>
+        <tbody id="benutzer-liste"></tbody>
+      </table></div>
+      <p style="font-size:13px;color:var(--grau);margin:12px 0 0">Lehrpersonen und Admins haben immer Zugang, auch ohne Code. Ein Konto entsteht immer über einen Code, danach kannst du hier die Rolle setzen.</p>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="zugang.js"></script>
+<script>
+(function () {
+  var db, lizenzen = [], codes = [], benutzer = [];
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var datum = function (d) { return d ? new Date(d).toLocaleDateString('de-CH') : ''; };
+  var zeit = function (d) { return d ? new Date(d).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' }) : ''; };
+  var meldung = function (id, text, art) { $(id).innerHTML = text ? '<div class="meldung ' + (art || 'ok') + '">' + esc(text) + '</div>' : ''; };
+  var csvLaden = function (name, zeilen) {
+    var inhalt = zeilen.map(function (z) { return z.map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(';'); }).join('\r\n');
+    var blob = new Blob(['﻿' + inhalt], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  Zugang.init({ titel: 'Lizenzverwaltung', untertitel: 'Nur für Admins' }).zugangPruefen().then(function (status) {
+    $('wer').textContent = status.email;
+    if (status.rolle !== 'admin') { $('sperre').style.display = 'flex'; return; }
+    db = Zugang.client;
+    allesLaden();
+  });
+
+  $('abmelden').onclick = function () { Zugang.abmelden().then(function () { location.reload(); }); };
+
+  document.querySelectorAll('nav.tabs button').forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll('nav.tabs button').forEach(function (x) { x.classList.toggle('aktiv', x === b); });
+      document.querySelectorAll('section.tab').forEach(function (s) { s.hidden = s.id !== 'tab-' + b.dataset.tab; });
+    };
+  });
+
+  async function allesLaden() {
+    var r = await db.from('lizenz_uebersicht').select('*').order('erstellt_am', { ascending: false });
+    if (r.error) return meldung('erzeugen-meldung', r.error.message, 'fehler');
+    lizenzen = r.data;
+    kennzahlen(); lizenzListe();
+    $('lizenz-namen').innerHTML = lizenzen.map(function (l) { return '<option value="' + esc(l.bezeichnung) + '">'; }).join('');
+    var sel = $('codes-lizenz'); var alt = sel.value;
+    sel.innerHTML = '<option value="">Alle Lizenzen</option>' + lizenzen.map(function (l) { return '<option value="' + l.id + '">' + esc(l.bezeichnung) + '</option>'; }).join('');
+    sel.value = alt;
+    codesLaden(); benutzerLaden();
+  }
+
+  function kennzahlen() {
+    var t = 0, e = 0, aktiv = 0;
+    lizenzen.forEach(function (l) { t += +l.codes_total; e += +l.codes_eingeloest; if (!l.gesperrt && (!l.gueltig_bis || l.gueltig_bis >= new Date().toISOString().slice(0, 10))) aktiv++; });
+    $('kennzahlen').innerHTML = '<div class="kz"><b>' + lizenzen.length + '</b><span>Lizenzen</span></div>'
+      + '<div class="kz"><b>' + aktiv + '</b><span>Aktiv</span></div>'
+      + '<div class="kz"><b>' + t + '</b><span>Codes</span></div>'
+      + '<div class="kz akzent"><b>' + e + '</b><span>Eingelöst</span></div>';
+  }
+
+  function lizenzStatus(l) {
+    var heute = new Date().toISOString().slice(0, 10);
+    if (l.gesperrt) return '<span class="tag rot">gesperrt</span>';
+    if (l.gueltig_bis && l.gueltig_bis < heute) return '<span class="tag gelb">abgelaufen</span>';
+    return '<span class="tag gruen">aktiv</span>';
+  }
+
+  function lizenzListe() {
+    $('lizenz-liste').innerHTML = lizenzen.map(function (l) {
+      return '<tr class="klick" data-id="' + l.id + '"><td><b>' + esc(l.bezeichnung) + '</b></td><td>' + esc(l.kunde) + '</td><td>' + (l.gueltig_bis ? datum(l.gueltig_bis) : 'unbefristet') + '</td>'
+        + '<td class="rechts">' + l.codes_total + '</td><td class="rechts">' + l.codes_eingeloest + '</td><td>' + lizenzStatus(l) + '</td>'
+        + '<td class="rechts"><button class="knopf klein leise" data-sperren="' + l.id + '">' + (l.gesperrt ? 'Entsperren' : 'Sperren') + '</button></td></tr>';
+    }).join('') || '<tr><td colspan="7" style="color:var(--grau)">Noch keine Lizenzen. Oben Codes erzeugen.</td></tr>';
+    $('lizenz-liste').querySelectorAll('button[data-sperren]').forEach(function (b) {
+      b.onclick = async function (ev) {
+        ev.stopPropagation();
+        var l = lizenzen.find(function (x) { return x.id === b.dataset.sperren; });
+        if (!confirm((l.gesperrt ? 'Lizenz entsperren: ' : 'Lizenz sperren, alle Benutzer verlieren sofort den Zugang: ') + l.bezeichnung + '?')) return;
+        var r = await db.from('lizenz').update({ gesperrt: !l.gesperrt }).eq('id', l.id);
+        if (r.error) return meldung('erzeugen-meldung', r.error.message, 'fehler');
+        allesLaden();
+      };
+    });
+    $('lizenz-liste').querySelectorAll('tr.klick').forEach(function (tr) {
+      tr.onclick = function () { $('codes-lizenz').value = tr.dataset.id; document.querySelector('[data-tab="codes"]').click(); codesLaden(); };
+    });
+  }
+
+  $('form-erzeugen').onsubmit = async function (ev) {
+    ev.preventDefault();
+    var f = ev.target; var knopf = f.querySelector('button'); knopf.disabled = true;
+    meldung('erzeugen-meldung', '');
+    var r = await db.rpc('codes_erzeugen', {
+      p_anzahl: +f.anzahl.value, p_bezeichnung: f.bezeichnung.value.trim(),
+      p_kunde: f.kunde.value.trim() || null, p_gueltig_bis: f.gueltig_bis.value || null
+    });
+    knopf.disabled = false;
+    if (r.error) return meldung('erzeugen-meldung', r.error.message, 'fehler');
+    var neue = r.data;
+    $('erzeugen-ergebnis').hidden = false;
+    $('erzeugen-anzahl').textContent = '(' + neue.length + ' Stück, ' + f.bezeichnung.value.trim() + ')';
+    $('erzeugen-codes').value = neue.join('\n');
+    $('erzeugen-csv').onclick = function () { csvLaden(f.bezeichnung.value.trim() + '.csv', [['Code', 'Lizenz', 'Kunde', 'Gültig bis']].concat(neue.map(function (c) { return [c, f.bezeichnung.value.trim(), f.kunde.value.trim(), f.gueltig_bis.value]; }))); };
+    $('erzeugen-kopieren').onclick = function () { navigator.clipboard.writeText(neue.join('\n')).then(function () { meldung('erzeugen-meldung', 'Codes in die Zwischenablage kopiert.'); }); };
+    meldung('erzeugen-meldung', neue.length + ' Codes erzeugt.');
+    allesLaden();
+  };
+
+  async function codesLaden() {
+    var q = db.from('code').select('code, gesperrt, eingeloest_am, lizenz_id, lizenz:lizenz_id(bezeichnung), profil:eingeloest_von(email)').order('erstellt_am', { ascending: false }).limit(5000);
+    if ($('codes-lizenz').value) q = q.eq('lizenz_id', $('codes-lizenz').value);
+    var r = await q;
+    if (r.error) return meldung('codes-meldung', r.error.message, 'fehler');
+    codes = r.data; codesListe();
+  }
+  function codesGefiltert() {
+    var f = $('codes-filter').value, s = $('codes-suche').value.trim().toLowerCase();
+    return codes.filter(function (c) {
+      if (f === 'frei' && (c.profil || c.gesperrt)) return false;
+      if (f === 'eingeloest' && !c.profil) return false;
+      if (f === 'gesperrt' && !c.gesperrt) return false;
+      if (s && c.code.toLowerCase().indexOf(s) < 0 && !(c.profil && c.profil.email.indexOf(s) >= 0)) return false;
+      return true;
+    });
+  }
+  function codesListe() {
+    var liste = codesGefiltert();
+    $('codes-liste').innerHTML = liste.slice(0, 500).map(function (c) {
+      var st = c.gesperrt ? '<span class="tag rot">gesperrt</span>' : c.profil ? '<span class="tag gruen">eingelöst</span>' : '<span class="tag grau">frei</span>';
+      return '<tr><td class="mono">' + c.code + '</td><td>' + st + ' <small style="color:var(--grau)">' + esc(c.lizenz && c.lizenz.bezeichnung) + '</small></td><td>' + esc(c.profil && c.profil.email) + '</td><td>' + zeit(c.eingeloest_am) + '</td>'
+        + '<td class="rechts"><button class="knopf klein leise" data-code="' + c.code + '">' + (c.gesperrt ? 'Entsperren' : 'Sperren') + '</button></td></tr>';
+    }).join('') + (liste.length > 500 ? '<tr><td colspan="5" style="color:var(--grau)">Nur die ersten 500 angezeigt, bitte filtern.</td></tr>' : '') || '<tr><td colspan="5" style="color:var(--grau)">Keine Codes.</td></tr>';
+    $('codes-liste').querySelectorAll('button[data-code]').forEach(function (b) {
+      b.onclick = async function () {
+        var c = codes.find(function (x) { return x.code === b.dataset.code; });
+        var r = await db.from('code').update({ gesperrt: !c.gesperrt }).eq('code', c.code);
+        if (r.error) return meldung('codes-meldung', r.error.message, 'fehler');
+        codesLaden(); allesLaden();
+      };
+    });
+  }
+  $('codes-lizenz').onchange = codesLaden;
+  $('codes-filter').onchange = codesListe;
+  $('codes-suche').oninput = codesListe;
+  $('codes-csv').onclick = function () {
+    csvLaden('codes.csv', [['Code', 'Lizenz', 'Status', 'Benutzer', 'Eingelöst am']].concat(codesGefiltert().map(function (c) {
+      return [c.code, c.lizenz && c.lizenz.bezeichnung, c.gesperrt ? 'gesperrt' : c.profil ? 'eingelöst' : 'frei', c.profil && c.profil.email, c.eingeloest_am];
+    })));
+  };
+
+  async function benutzerLaden() {
+    var r = await db.from('profil').select('id, email, rolle, erstellt_am, code:code!eingeloest_von(code, lizenz:lizenz_id(bezeichnung)), fortschritt(schluessel)').order('erstellt_am', { ascending: false }).limit(5000);
+    if (r.error) return meldung('benutzer-meldung', r.error.message, 'fehler');
+    benutzer = r.data; benutzerListe();
+  }
+  function benutzerListe() {
+    var s = $('benutzer-suche').value.trim().toLowerCase();
+    $('benutzer-liste').innerHTML = benutzer.filter(function (b) { return !s || b.email.indexOf(s) >= 0; }).slice(0, 500).map(function (b) {
+      var liz = (b.code || []).map(function (c) { return c.lizenz ? c.lizenz.bezeichnung : ''; }).filter(Boolean).join(', ');
+      return '<tr><td>' + esc(b.email) + '</td><td><select data-rolle="' + b.id + '">'
+        + ['lernende', 'lehrperson', 'admin'].map(function (r) { return '<option' + (r === b.rolle ? ' selected' : '') + '>' + r + '</option>'; }).join('')
+        + '</select></td><td>' + esc(liz) + '</td><td>' + datum(b.erstellt_am) + '</td><td class="rechts">' + (b.fortschritt || []).length + '</td></tr>';
+    }).join('') || '<tr><td colspan="5" style="color:var(--grau)">Keine Benutzer.</td></tr>';
+    $('benutzer-liste').querySelectorAll('select[data-rolle]').forEach(function (sel) {
+      sel.onchange = async function () {
+        var r = await db.from('profil').update({ rolle: sel.value }).eq('id', sel.dataset.rolle);
+        if (r.error) { meldung('benutzer-meldung', r.error.message, 'fehler'); benutzerLaden(); return; }
+        meldung('benutzer-meldung', 'Rolle gespeichert.');
+      };
+    });
+  }
+  $('benutzer-suche').oninput = benutzerListe;
+})();
+</script>
+</body>
+</html>
