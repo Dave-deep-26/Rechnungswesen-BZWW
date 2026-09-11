@@ -36,7 +36,11 @@ Login mit E-Mail und Zugangscode, Fortschritt in der Datenbank, Offlinebetrieb �
 
 ## Einbau in die Plattform
 
-Vor dem eigenen Code der Plattform, direkt vor `</body>`:
+In `plattform/index.html` ist der Einbau bereits gemacht. Die Plattform lädt die drei Scripts, zeigt ohne Zugang die Anmeldemaske, holt beim Start den Fortschritt aus dem Konto und meldet jede Änderung gebündelt an den Server. Der bisherige localStorage Schlüssel `finanzbuchhaltung-plattform-v2` bleibt als Puffer, bestehende Nutzer werden beim ersten Login übernommen. In der Infoleiste stehen neu das angemeldete Konto und „Abmelden“. „Fortschritt zurücksetzen“ leert auch das Konto.
+
+**Deployment auf Vercel:** den ganzen Ordner `plattform/` hochladen (index.html plus Ordner `lizenz/`). In `sw.js` die Dateien `./lizenz/config.js` und `./lizenz/zugang.js` sowie die Supabase CDN URL in die Cache Liste aufnehmen, dann läuft die Plattform auch offline mit Login. Ohne diesen Eintrag läuft sie offline trotzdem, aber nur für Nutzer, die sich schon einmal angemeldet haben.
+
+Für eine andere App sieht der Einbau so aus, direkt vor `</body>`:
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

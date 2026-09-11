@@ -3,10 +3,10 @@
 window.ZUGANG_CONFIG = {
   url: 'https://DEIN-PROJEKT.supabase.co',
   anonKey: 'DEIN-ANON-KEY',
-  titel: 'Finanzbuchhaltung Plattform',
+  titel: 'Finanzbuchhaltung Übungsplattform',
   untertitel: 'finanzunterricht.ch',
   // localStorage Schlüssel der bisherigen Plattform, die beim ersten Login einmalig übernommen werden.
   // Genaue Namen oder ein Präfix. Leer lassen, wenn es nichts zu übernehmen gibt.
-  alteSchluessel: [],
+  alteSchluessel: ['finanzbuchhaltung-plattform-v2'],
   alteSchluesselPraefix: ''
 };
