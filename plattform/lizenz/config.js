@@ -1,7 +1,7 @@
 // Supabase Projekt: Settings → API
 // Beide Werte sind öffentlich (Anon Key), die Sicherheit liegt in den RLS Regeln der Datenbank.
 window.ZUGANG_CONFIG = {
-  url: 'https://DEIN-PROJEKT.supabase.co',
+  url: 'https://yhdfgtwjjfpzywjybpsi.supabase.co',
   anonKey: 'DEIN-ANON-KEY',
   titel: 'Finanzbuchhaltung Übungsplattform',
   untertitel: 'finanzunterricht.ch',
