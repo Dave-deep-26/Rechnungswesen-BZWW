@@ -1,0 +1,11 @@
+{
+  "name": "Finanzbuchhaltung Übungsplattform",
+  "short_name": "Finanzbuchhaltung",
+  "description": "Interaktive Übungsplattform Finanzbuchhaltung I, finanzunterricht.ch",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#14213D",
+  "theme_color": "#14213D",
+  "lang": "de-CH",
+  "icons": [{ "src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
