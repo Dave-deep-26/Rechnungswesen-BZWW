@@ -2,7 +2,7 @@
 // Beide Werte sind öffentlich (Anon Key), die Sicherheit liegt in den RLS Regeln der Datenbank.
 window.ZUGANG_CONFIG = {
   url: 'https://yhdfgtwjjfpzywjybpsi.supabase.co',
-  anonKey: 'DEIN-ANON-KEY',
+  anonKey: 'sb_publishable_RViaIRbvkrU3CRlsWDLIgg_CN4v0Yza',
   titel: 'Finanzbuchhaltung Übungsplattform',
   untertitel: 'finanzunterricht.ch',
   // localStorage Schlüssel der bisherigen Plattform, die beim ersten Login einmalig übernommen werden.
