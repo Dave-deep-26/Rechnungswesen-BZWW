@@ -136,6 +136,7 @@ $$;
 create or replace function public.code_generieren()
 returns text
 language plpgsql volatile
+set search_path = public, extensions
 as $$
 declare
   alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';  -- 32 Zeichen
@@ -162,7 +163,7 @@ create or replace function public.codes_erzeugen(
 )
 returns setof text
 language plpgsql volatile security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_lizenz uuid;
