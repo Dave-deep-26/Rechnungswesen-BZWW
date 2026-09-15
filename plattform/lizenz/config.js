@@ -3,6 +3,7 @@
 window.ZUGANG_CONFIG = {
   url: 'https://yhdfgtwjjfpzywjybpsi.supabase.co',
   anonKey: 'sb_publishable_RViaIRbvkrU3CRlsWDLIgg_CN4v0Yza',
+  produkt: 'fibu',
   titel: 'Finanzbuchhaltung Übungsplattform',
   untertitel: 'finanzunterricht.ch',
   // localStorage Schlüssel der bisherigen Plattform, die beim ersten Login einmalig übernommen werden.

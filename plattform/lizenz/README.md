@@ -76,9 +76,15 @@ Zugang.abmelden().then(function () { location.reload(); });
 
 **Offline:** Sitzung und Zugangsstatus liegen im Browser. Wer sich einmal angemeldet hat, kommt auch ohne Netz in die Plattform. Änderungen landen in einem Puffer und gehen raus, sobald der Browser wieder online ist. Nur die allererste Anmeldung braucht Internet.
 
+## Mehrere Angebote, eine Konsole
+
+Jede Lizenz gehört zu genau einem Produkt (`fibu` = Finanzbuchhaltung Plattform, `siu-m4` = SIU Modul 4, weitere jederzeit). Ein Code öffnet nur das Angebot, für das er erzeugt wurde. Eine Person kann mit demselben Konto mehrere Angebote nutzen: sie meldet sich mit ihrem bisherigen Code an, sieht den Hinweis „anderes Angebot“ und gibt den neuen Code ein. Danach gilt der neue Code als Passwort.
+
+Neues Angebot anschliessen: Ordner mit `index.html`, `lizenz/config.js` (eigener Wert bei `produkt`) und `lizenz/zugang.js`, Einbau wie unten. In `admin.html` das Produkt in der Liste `PRODUKTE` ergänzen, damit es im Menü erscheint.
+
 ## So funktioniert die Lizenzierung
 
-- **Lizenz** = eine Charge Codes, z.B. `KVOST-2026-01` für eine Schule und ein Schuljahr, mit Ablaufdatum.
+- **Lizenz** = eine Charge Codes, z.B. `KVOST-2026-01` für eine Schule und ein Schuljahr, mit Ablaufdatum und Produkt.
 - **Code** = ein Sitz. Format `ABCD-EFGH-JKLM`, ohne I, O, 0 und 1. Wird beim ersten Login fest an eine E-Mail gebunden. Ein zweites Konto mit demselben Code ist nicht möglich.
 - **Login danach**: dieselbe E-Mail plus derselbe Code, auf jedem Gerät. Der Code ist zugleich das Passwort.
 - **Sperren**: einzelne Codes oder die ganze Lizenz. Wirkt sofort, auch das Speichern von Fortschritt ist dann serverseitig blockiert. Praktisch bei unbezahlten Rechnungen.

@@ -40,6 +40,10 @@ create table if not exists public.code (
   gesperrt       boolean not null default false,
   erstellt_am    timestamptz not null default now()
 );
+-- Produkt: jede Lizenz gilt für genau ein Angebot, z.B. 'fibu' oder 'siu-m4'
+alter table public.lizenz add column if not exists produkt text not null default 'fibu';
+create index if not exists lizenz_produkt_idx on public.lizenz (produkt);
+
 create index if not exists code_lizenz_idx on public.code (lizenz_id);
 create index if not exists code_benutzer_idx on public.code (eingeloest_von);
 
@@ -117,6 +121,25 @@ as $$
       );
 $$;
 
+-- Zugang für ein bestimmtes Produkt. null = irgendein gültiger Code.
+create or replace function public.hat_zugang(p_produkt text)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select public.ist_lehrperson()
+      or exists (
+        select 1
+        from public.code c
+        join public.lizenz l on l.id = c.lizenz_id
+        where c.eingeloest_von = auth.uid()
+          and not c.gesperrt
+          and not l.gesperrt
+          and (l.gueltig_bis is null or l.gueltig_bis >= current_date)
+          and (p_produkt is null or l.produkt = p_produkt)
+      );
+$$;
+
 -- Eingabe säubern: Grossbuchstaben, nur erlaubte Zeichen, Bindestriche setzen.
 create or replace function public.code_normalisieren(p_code text)
 returns text
@@ -153,13 +176,15 @@ $$;
 
 -- ---------------------------------------------------------------------
 -- Admin: Codes erzeugen
--- Beispiel im SQL Editor:  select * from public.codes_erzeugen(300, 'KVOST-2026-01', 'KV Ostschweiz', '2027-07-31');
+-- Beispiel im SQL Editor:  select * from public.codes_erzeugen(300, 'KVOST-2026-01', 'KV Ostschweiz', '2027-07-31', 'fibu');
 -- ---------------------------------------------------------------------
+drop function if exists public.codes_erzeugen(int, text, text, date);
 create or replace function public.codes_erzeugen(
   p_anzahl       int,
   p_bezeichnung  text,
   p_kunde        text default null,
-  p_gueltig_bis  date default null
+  p_gueltig_bis  date default null,
+  p_produkt      text default 'fibu'
 )
 returns setof text
 language plpgsql volatile security definer
@@ -180,11 +205,16 @@ begin
     raise exception 'Bezeichnung fehlt.';
   end if;
 
-  insert into public.lizenz (bezeichnung, kunde, gueltig_bis, erstellt_von)
-  values (trim(p_bezeichnung), nullif(trim(p_kunde), ''), p_gueltig_bis, auth.uid())
+  if coalesce(trim(p_produkt), '') = '' then
+    raise exception 'Produkt fehlt.';
+  end if;
+
+  insert into public.lizenz (bezeichnung, kunde, gueltig_bis, erstellt_von, produkt)
+  values (trim(p_bezeichnung), nullif(trim(p_kunde), ''), p_gueltig_bis, auth.uid(), trim(p_produkt))
   on conflict (bezeichnung) do update
     set kunde       = coalesce(excluded.kunde, public.lizenz.kunde),
-        gueltig_bis = coalesce(excluded.gueltig_bis, public.lizenz.gueltig_bis)
+        gueltig_bis = coalesce(excluded.gueltig_bis, public.lizenz.gueltig_bis),
+        produkt     = excluded.produkt
   returning id into v_lizenz;
 
   for i in 1..p_anzahl loop
@@ -203,13 +233,14 @@ begin
 end;
 $$;
 
-revoke execute on function public.codes_erzeugen(int, text, text, date) from anon;
+revoke execute on function public.codes_erzeugen(int, text, text, date, text) from anon;
 
 -- ---------------------------------------------------------------------
 -- Öffentlich: Code prüfen, bevor ein Konto angelegt wird
--- Antwort: status = frei | eigener | vergeben | ungueltig | gesperrt | abgelaufen
+-- Antwort: status = frei | eigener | vergeben | ungueltig | gesperrt | abgelaufen | falsches_produkt
 -- ---------------------------------------------------------------------
-create or replace function public.code_pruefen(p_code text, p_email text)
+drop function if exists public.code_pruefen(text, text);
+create or replace function public.code_pruefen(p_code text, p_email text, p_produkt text default null)
 returns jsonb
 language plpgsql stable security definer
 set search_path = public
@@ -221,7 +252,7 @@ declare
   v_status text;
 begin
   select c.code, c.gesperrt as code_gesperrt, c.eingeloest_von,
-         l.bezeichnung, l.gueltig_bis, l.gesperrt as lizenz_gesperrt,
+         l.bezeichnung, l.gueltig_bis, l.gesperrt as lizenz_gesperrt, l.produkt,
          p.email as inhaber_email
     into r
     from public.code c
@@ -233,21 +264,24 @@ begin
     return jsonb_build_object('status', 'ungueltig');
   end if;
 
-  if r.code_gesperrt or r.lizenz_gesperrt then
+  if r.eingeloest_von is not null and r.inhaber_email = v_email then
+    v_status := 'eigener';   -- eigener Code: Anmeldung immer möglich, Zugang wird danach je Produkt geprüft
+  elsif r.eingeloest_von is not null then
+    v_status := 'vergeben';
+  elsif p_produkt is not null and r.produkt <> p_produkt then
+    v_status := 'falsches_produkt';
+  elsif r.code_gesperrt or r.lizenz_gesperrt then
     v_status := 'gesperrt';
   elsif r.gueltig_bis is not null and r.gueltig_bis < current_date then
     v_status := 'abgelaufen';
-  elsif r.eingeloest_von is null then
-    v_status := 'frei';
-  elsif r.inhaber_email = v_email then
-    v_status := 'eigener';
   else
-    v_status := 'vergeben';
+    v_status := 'frei';
   end if;
 
   return jsonb_build_object(
     'status', v_status,
     'lizenz', r.bezeichnung,
+    'produkt', r.produkt,
     'gueltig_bis', r.gueltig_bis
   );
 end;
@@ -256,7 +290,8 @@ $$;
 -- ---------------------------------------------------------------------
 -- Angemeldet: Zugangsstatus abfragen
 -- ---------------------------------------------------------------------
-create or replace function public.zugang_status()
+drop function if exists public.zugang_status();
+create or replace function public.zugang_status(p_produkt text default null)
 returns jsonb
 language plpgsql stable security definer
 set search_path = public
@@ -274,12 +309,13 @@ begin
     return jsonb_build_object('angemeldet', true, 'aktiv', false, 'grund', 'kein_profil');
   end if;
 
-  select l.bezeichnung, l.kunde, l.gueltig_bis, c.code,
+  select l.bezeichnung, l.kunde, l.gueltig_bis, l.produkt, c.code,
          (c.gesperrt or l.gesperrt) as gesperrt
     into lz
     from public.code c
     join public.lizenz l on l.id = c.lizenz_id
    where c.eingeloest_von = auth.uid()
+     and (p_produkt is null or l.produkt = p_produkt)
    order by (not c.gesperrt and not l.gesperrt
              and (l.gueltig_bis is null or l.gueltig_bis >= current_date)) desc,
             c.eingeloest_am desc
@@ -287,16 +323,18 @@ begin
 
   return jsonb_build_object(
     'angemeldet',  true,
-    'aktiv',       public.hat_zugang(),
+    'aktiv',       public.hat_zugang(p_produkt),
     'rolle',       p.rolle,
     'email',       p.email,
     'user_id',     p.id,
+    'produkt',     coalesce(lz.produkt, p_produkt),
     'lizenz',      lz.bezeichnung,
     'kunde',       lz.kunde,
     'code',        lz.code,
     'gueltig_bis', lz.gueltig_bis,
     'grund',       case
-                     when public.hat_zugang() then null
+                     when public.hat_zugang(p_produkt) then null
+                     when lz.code is null and public.hat_zugang(null) then 'anderes_produkt'
                      when lz.code is null then 'kein_code'
                      when lz.gesperrt then 'gesperrt'
                      else 'abgelaufen'
@@ -308,7 +346,8 @@ $$;
 -- ---------------------------------------------------------------------
 -- Angemeldet: Code einlösen (bindet den Code an das eigene Konto)
 -- ---------------------------------------------------------------------
-create or replace function public.code_einloesen(p_code text)
+drop function if exists public.code_einloesen(text);
+create or replace function public.code_einloesen(p_code text, p_produkt text default null)
 returns jsonb
 language plpgsql volatile security definer
 set search_path = public
@@ -322,7 +361,7 @@ begin
   end if;
 
   select c.code, c.gesperrt as code_gesperrt, c.eingeloest_von,
-         l.gueltig_bis, l.gesperrt as lizenz_gesperrt
+         l.gueltig_bis, l.gesperrt as lizenz_gesperrt, l.produkt
     into r
     from public.code c
     join public.lizenz l on l.id = c.lizenz_id
@@ -331,6 +370,9 @@ begin
 
   if not found then
     raise exception 'Diesen Code gibt es nicht.';
+  end if;
+  if p_produkt is not null and r.produkt <> p_produkt then
+    raise exception 'Dieser Code gilt für ein anderes Angebot.';
   end if;
   if r.code_gesperrt or r.lizenz_gesperrt then
     raise exception 'Dieser Code ist gesperrt.';
@@ -348,11 +390,11 @@ begin
      where code = v_code;
   end if;
 
-  return public.zugang_status();
+  return public.zugang_status(p_produkt);
 end;
 $$;
 
-revoke execute on function public.code_einloesen(text) from anon;
+revoke execute on function public.code_einloesen(text, text) from anon;
 
 -- ---------------------------------------------------------------------
 -- Angemeldet: Fortschritt speichern (mehrere Schlüssel auf einmal)
@@ -398,10 +440,11 @@ revoke execute on function public.fortschritt_speichern(jsonb) from anon;
 -- ---------------------------------------------------------------------
 -- Admin: Übersicht pro Lizenz
 -- ---------------------------------------------------------------------
-create or replace view public.lizenz_uebersicht
+drop view if exists public.lizenz_uebersicht;
+create view public.lizenz_uebersicht
 with (security_invoker = true)
 as
-select l.id, l.bezeichnung, l.kunde, l.gueltig_bis, l.gesperrt, l.notiz, l.erstellt_am,
+select l.id, l.bezeichnung, l.produkt, l.kunde, l.gueltig_bis, l.gesperrt, l.notiz, l.erstellt_am,
        count(c.code)                         as codes_total,
        count(c.eingeloest_von)               as codes_eingeloest,
        count(c.code) filter (where c.gesperrt) as codes_gesperrt
@@ -465,11 +508,11 @@ grant select on public.profil, public.code, public.fortschritt, public.lizenz, p
 grant insert, update, delete on public.fortschritt to authenticated;
 grant insert, update, delete on public.lizenz, public.code to authenticated;   -- RLS erlaubt das nur Admins
 grant update on public.profil to authenticated;                                -- RLS erlaubt das nur Admins
-grant execute on function public.code_pruefen(text, text) to anon, authenticated;
-grant execute on function public.zugang_status() to authenticated;
-grant execute on function public.code_einloesen(text) to authenticated;
+grant execute on function public.code_pruefen(text, text, text) to anon, authenticated;
+grant execute on function public.zugang_status(text) to authenticated;
+grant execute on function public.code_einloesen(text, text) to authenticated;
 grant execute on function public.fortschritt_speichern(jsonb) to authenticated;
-grant execute on function public.codes_erzeugen(int, text, text, date) to authenticated;
+grant execute on function public.codes_erzeugen(int, text, text, date, text) to authenticated;
 
 -- =====================================================================
 -- Nach dem ersten eigenen Login (mit irgendeinem Code) einmalig ausführen:
