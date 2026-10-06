@@ -45,6 +45,13 @@
   .kz.akzent b{color:#FF5C9A}
   .sperre{display:none;position:fixed;inset:0;background:var(--navy);color:var(--creme);align-items:center;justify-content:center;text-align:center;padding:24px;z-index:9999}
   .rechts{text-align:right}
+  div.f{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--grau)}
+  .produkte{display:flex;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:0}
+  .produkte label{display:flex;align-items:center;gap:7px;border:1px solid var(--linie);border-radius:999px;padding:7px 13px;font-size:14px;font-weight:600;color:#374151;cursor:pointer;background:#fff}
+  .produkte label:has(input:checked){border-color:var(--navy);background:#EEF1F6;color:var(--navy)}
+  .produkte input{accent-color:var(--magenta);margin:0}
+  .tag.klickbar{cursor:pointer}.tag.klickbar:hover{outline:1px solid var(--grau)}
+  .tag+.tag{margin-left:4px}
   @media (max-width:640px){.tabelle{overflow-x:auto}th,td{padding:8px 6px}}
 </style>
 </head>
@@ -71,7 +78,7 @@
     <div class="karte">
       <h2>Codes erzeugen</h2>
       <form id="form-erzeugen" class="zeile">
-        <label class="f">Produkt<select name="produkt" id="produkt-wahl"></select></label>
+        <div class="f" style="flex:1 1 100%">Produkte<div class="produkte" id="produkt-wahl"></div></div>
         <label class="f">Bezeichnung<input name="bezeichnung" required placeholder="KVOST-2026-01" list="lizenz-namen"></label>
         <datalist id="lizenz-namen"></datalist>
         <label class="f">Kunde<input name="kunde" placeholder="KV Ostschweiz"></label>
@@ -136,9 +143,36 @@
 <script>
 (function () {
   var db, lizenzen = [], codes = [], benutzer = [];
-  // Produkte: Schlüssel = Wert in config.js der jeweiligen Plattform
-  var PRODUKTE = { 'fibu': 'Finanzbuchhaltung Plattform', 'siu-m4': 'SIU Modul 4 Rechnungswesen', 'bilanza': 'Bilanza App' };
-  var produktName = function (k) { return PRODUKTE[k] || k || ''; };
+  // Produkte: Schlüssel = Wert in config.js der jeweiligen Plattform.
+  // Eine Lizenz kann mehrere Produkte haben (Paket), gespeichert als 'fibu,bilanza'.
+  var PRODUKTE = {
+    'fibu': 'Finanzbuchhaltung Plattform',
+    'bilanza': 'Bilanza App',
+    'tk': 'Plattform TK (Technische Kaufleute)'
+  };
+  // Pausierte Angebote: nicht auswählbar, aber bestehende Lizenzen werden weiter richtig angezeigt.
+  // Zum Reaktivieren die Zeile oben in PRODUKTE verschieben.
+  var PAUSIERT = {
+    'siu-m4': 'SIU Modul 4 Rechnungswesen'   // pausiert seit 10/2026, keine Rückmeldung von SIU. Später wieder anbieten.
+  };
+  var STANDARD = ['fibu', 'bilanza'];
+  var produktListe = function (wert) { return String(wert || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean); };
+  var produktName = function (k) { return PRODUKTE[k] || PAUSIERT[k] || k || ''; };
+  var produktTags = function (wert, klickbar) {
+    var liste = produktListe(wert);
+    var cls = 'tag grau' + (klickbar ? ' klickbar' : '');
+    if (!liste.length) return '<span class="' + cls + '">Alle Produkte</span>';
+    return liste.map(function (k) { return '<span class="' + cls + '">' + esc(produktName(k)) + '</span>'; }).join('');
+  };
+  var produktText = function (wert) { var l = produktListe(wert); return l.length ? l.map(produktName).join(' + ') : 'Alle Produkte'; };
+  var kaestchen = function (gewaehlt) {
+    return Object.keys(PRODUKTE).map(function (k) {
+      return '<label><input type="checkbox" value="' + k + '"' + (gewaehlt.indexOf(k) >= 0 ? ' checked' : '') + '>' + esc(PRODUKTE[k]) + '</label>';
+    }).join('');
+  };
+  var gewaehlteProdukte = function (el) {
+    return Array.prototype.map.call(el.querySelectorAll('input:checked'), function (i) { return i.value; }).join(',');
+  };
   var $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var datum = function (d) { return d ? new Date(d).toLocaleDateString('de-CH') : ''; };
@@ -154,7 +188,7 @@
     $('wer').textContent = status.email;
     if (status.rolle !== 'admin') { $('sperre').style.display = 'flex'; return; }
     db = Zugang.client;
-    $('produkt-wahl').innerHTML = Object.keys(PRODUKTE).map(function (k) { return '<option value="' + k + '">' + esc(PRODUKTE[k]) + '</option>'; }).join('');
+    $('produkt-wahl').innerHTML = kaestchen(STANDARD);
     allesLaden();
   });
 
@@ -197,7 +231,7 @@
 
   function lizenzListe() {
     $('lizenz-liste').innerHTML = lizenzen.map(function (l) {
-      return '<tr class="klick" data-id="' + l.id + '"><td><b>' + esc(l.bezeichnung) + '</b></td><td><span class="tag grau">' + esc(produktName(l.produkt)) + '</span></td><td>' + esc(l.kunde) + '</td><td>' + (l.gueltig_bis ? datum(l.gueltig_bis) : 'unbefristet') + '</td>'
+      return '<tr class="klick" data-id="' + l.id + '"><td><b>' + esc(l.bezeichnung) + '</b></td><td data-produkte="' + l.id + '" title="Klicken, um die Produkte zu ändern">' + produktTags(l.produkt, true) + '</td><td>' + esc(l.kunde) + '</td><td>' + (l.gueltig_bis ? datum(l.gueltig_bis) : 'unbefristet') + '</td>'
         + '<td class="rechts">' + l.codes_total + '</td><td class="rechts">' + l.codes_eingeloest + '</td><td>' + lizenzStatus(l) + '</td>'
         + '<td class="rechts"><button class="knopf klein leise" data-sperren="' + l.id + '">' + (l.gesperrt ? 'Entsperren' : 'Sperren') + '</button></td></tr>';
     }).join('') || '<tr><td colspan="8" style="color:var(--grau)">Noch keine Lizenzen. Oben Codes erzeugen.</td></tr>';
@@ -211,6 +245,28 @@
         allesLaden();
       };
     });
+    // Produkte einer bestehenden Lizenz ändern (z.B. Bilanza App dazu)
+    $('lizenz-liste').querySelectorAll('td[data-produkte]').forEach(function (td) {
+      td.onclick = function (ev) {
+        ev.stopPropagation();
+        if (td.querySelector('.produkte')) return;
+        var l = lizenzen.find(function (x) { return x.id === td.dataset.produkte; });
+        td.innerHTML = '<div class="produkte" style="flex-direction:column;align-items:flex-start">' + kaestchen(produktListe(l.produkt)) + '</div>'
+          + '<div style="margin-top:6px;display:flex;gap:6px"><button class="knopf klein">Speichern</button><button class="knopf klein leise">Abbrechen</button></div>';
+        var knoepfe = td.querySelectorAll('button');
+        knoepfe[1].onclick = function (e) { e.stopPropagation(); lizenzListe(); };
+        knoepfe[0].onclick = async function (e) {
+          e.stopPropagation();
+          var neu = gewaehlteProdukte(td);
+          if (!neu) return alert('Mindestens ein Produkt wählen.');
+          if (!confirm('Lizenz ' + l.bezeichnung + ' gilt neu für: ' + produktText(neu) + '?')) return;
+          var r = await db.from('lizenz').update({ produkt: neu }).eq('id', l.id);
+          if (r.error) return meldung('erzeugen-meldung', r.error.message, 'fehler');
+          meldung('erzeugen-meldung', l.bezeichnung + ' gilt jetzt für: ' + produktText(neu) + '.');
+          allesLaden();
+        };
+      };
+    });
     $('lizenz-liste').querySelectorAll('tr.klick').forEach(function (tr) {
       tr.onclick = function () { $('codes-lizenz').value = tr.dataset.id; document.querySelector('[data-tab="codes"]').click(); codesLaden(); };
     });
@@ -218,12 +274,15 @@
 
   $('form-erzeugen').onsubmit = async function (ev) {
     ev.preventDefault();
-    var f = ev.target; var knopf = f.querySelector('button'); knopf.disabled = true;
+    var f = ev.target; var knopf = f.querySelector('button[type="submit"]');
+    var produkte = gewaehlteProdukte($('produkt-wahl'));
     meldung('erzeugen-meldung', '');
+    if (!produkte) return meldung('erzeugen-meldung', 'Mindestens ein Produkt wählen.', 'fehler');
+    knopf.disabled = true;
     var r = await db.rpc('codes_erzeugen', {
       p_anzahl: +f.anzahl.value, p_bezeichnung: f.bezeichnung.value.trim(),
       p_kunde: f.kunde.value.trim() || null, p_gueltig_bis: f.gueltig_bis.value || null,
-      p_produkt: f.produkt.value
+      p_produkt: produkte
     });
     knopf.disabled = false;
     if (r.error) return meldung('erzeugen-meldung', r.error.message, 'fehler');
@@ -231,7 +290,7 @@
     $('erzeugen-ergebnis').hidden = false;
     $('erzeugen-anzahl').textContent = '(' + neue.length + ' Stück, ' + f.bezeichnung.value.trim() + ')';
     $('erzeugen-codes').value = neue.join('\n');
-    $('erzeugen-csv').onclick = function () { csvLaden(f.bezeichnung.value.trim() + '.csv', [['Code', 'Lizenz', 'Produkt', 'Kunde', 'Gültig bis']].concat(neue.map(function (c) { return [c, f.bezeichnung.value.trim(), produktName(f.produkt.value), f.kunde.value.trim(), f.gueltig_bis.value]; }))); };
+    $('erzeugen-csv').onclick = function () { csvLaden(f.bezeichnung.value.trim() + '.csv', [['Code', 'Lizenz', 'Produkt', 'Kunde', 'Gültig bis']].concat(neue.map(function (c) { return [c, f.bezeichnung.value.trim(), produktText(produkte), f.kunde.value.trim(), f.gueltig_bis.value]; }))); };
     $('erzeugen-kopieren').onclick = function () { navigator.clipboard.writeText(neue.join('\n')).then(function () { meldung('erzeugen-meldung', 'Codes in die Zwischenablage kopiert.'); }); };
     meldung('erzeugen-meldung', neue.length + ' Codes erzeugt.');
     allesLaden();
@@ -258,7 +317,7 @@
     var liste = codesGefiltert();
     $('codes-liste').innerHTML = liste.slice(0, 500).map(function (c) {
       var st = c.gesperrt ? '<span class="tag rot">gesperrt</span>' : c.profil ? '<span class="tag gruen">eingelöst</span>' : '<span class="tag grau">frei</span>';
-      return '<tr><td class="mono">' + c.code + '</td><td>' + st + ' <small style="color:var(--grau)">' + esc(c.lizenz && c.lizenz.bezeichnung) + ' · ' + esc(c.lizenz && produktName(c.lizenz.produkt)) + '</small></td><td>' + esc(c.profil && c.profil.email) + '</td><td>' + zeit(c.eingeloest_am) + '</td>'
+      return '<tr><td class="mono">' + c.code + '</td><td>' + st + ' <small style="color:var(--grau)">' + esc(c.lizenz && c.lizenz.bezeichnung) + ' · ' + esc(c.lizenz && produktText(c.lizenz.produkt)) + '</small></td><td>' + esc(c.profil && c.profil.email) + '</td><td>' + zeit(c.eingeloest_am) + '</td>'
         + '<td class="rechts"><button class="knopf klein leise" data-code="' + c.code + '">' + (c.gesperrt ? 'Entsperren' : 'Sperren') + '</button></td></tr>';
     }).join('') + (liste.length > 500 ? '<tr><td colspan="5" style="color:var(--grau)">Nur die ersten 500 angezeigt, bitte filtern.</td></tr>' : '') || '<tr><td colspan="5" style="color:var(--grau)">Keine Codes.</td></tr>';
     $('codes-liste').querySelectorAll('button[data-code]').forEach(function (b) {
@@ -287,7 +346,7 @@
   function benutzerListe() {
     var s = $('benutzer-suche').value.trim().toLowerCase();
     $('benutzer-liste').innerHTML = benutzer.filter(function (b) { return !s || b.email.indexOf(s) >= 0; }).slice(0, 500).map(function (b) {
-      var liz = (b.code || []).map(function (c) { return c.lizenz ? c.lizenz.bezeichnung + ' (' + produktName(c.lizenz.produkt) + ')' : ''; }).filter(Boolean).join(', ');
+      var liz = (b.code || []).map(function (c) { return c.lizenz ? c.lizenz.bezeichnung + ' (' + produktText(c.lizenz.produkt) + ')' : ''; }).filter(Boolean).join(', ');
       return '<tr><td>' + esc(b.email) + '</td><td><select data-rolle="' + b.id + '">'
         + ['lernende', 'lehrperson', 'admin'].map(function (r) { return '<option' + (r === b.rolle ? ' selected' : '') + '>' + r + '</option>'; }).join('')
         + '</select></td><td>' + esc(liz) + '</td><td>' + datum(b.erstellt_am) + '</td><td class="rechts">' + (b.fortschritt || []).length + '</td></tr>';

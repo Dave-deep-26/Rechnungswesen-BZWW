@@ -78,9 +78,11 @@ Zugang.abmelden().then(function () { location.reload(); });
 
 ## Mehrere Angebote, eine Konsole
 
-Jede Lizenz gehört zu genau einem Produkt (`fibu` = Finanzbuchhaltung Plattform, `siu-m4` = SIU Modul 4, weitere jederzeit). Ein Code öffnet nur das Angebot, für das er erzeugt wurde. Eine Person kann mit demselben Konto mehrere Angebote nutzen: sie meldet sich mit ihrem bisherigen Code an, sieht den Hinweis „anderes Angebot“ und gibt den neuen Code ein. Danach gilt der neue Code als Passwort.
+Jede Lizenz gilt für ein oder mehrere Produkte (`fibu` = Finanzbuchhaltung Plattform, `bilanza` = Bilanza App, `tk` = Plattform TK, `siu-m4` = SIU Modul 4, pausiert). Ein Paket wird als Liste gespeichert, z.B. `fibu,bilanza`: derselbe Code mit derselben E-Mail öffnet dann beide Angebote. Ohne Produkt (`null`) gilt eine Lizenz für alles, z.B. `INTERN`. Ein Code öffnet nur die Angebote seiner Lizenz. In der Konsole werden die Produkte per Kästchen gewählt und lassen sich bei bestehenden Lizenzen per Klick ändern.
 
-Neues Angebot anschliessen: Ordner mit `index.html`, `lizenz/config.js` (eigener Wert bei `produkt`) und `lizenz/zugang.js`, Einbau wie unten. In `admin.html` das Produkt in der Liste `PRODUKTE` ergänzen, damit es im Menü erscheint.
+Datenbank: nach `schema.sql` zusätzlich `update-produkte.sql` und `update-pakete.sql` ausführen (beide mehrfach ausführbar). Eine Person kann mit demselben Konto mehrere Angebote nutzen: sie meldet sich mit ihrem bisherigen Code an, sieht den Hinweis „anderes Angebot“ und gibt den neuen Code ein. Danach gilt der neue Code als Passwort.
+
+Neues Angebot anschliessen: Ordner mit `index.html`, `lizenz/config.js` (eigener Wert bei `produkt`) und `lizenz/zugang.js`, Einbau wie unten. In `admin.html` das Produkt in der Liste `PRODUKTE` ergänzen, damit es in der Auswahl erscheint. Pausierte Angebote stehen in `PAUSIERT`: nicht mehr wählbar, bestehende Lizenzen werden aber weiter korrekt angezeigt.
 
 ## So funktioniert die Lizenzierung
 
